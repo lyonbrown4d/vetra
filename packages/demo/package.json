@@ -1,0 +1,24 @@
+{
+  "name": "vetra-demo",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "clean": "pwsh -NoProfile -Command \"Remove-Item -Recurse -Force dist, tsconfig.tsbuildinfo -ErrorAction SilentlyContinue\"",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vetra/blocks-basic": "workspace:*",
+    "@vetra/core": "workspace:*",
+    "@vetra/persistence-json": "workspace:*",
+    "@vetra/react": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
+    "vite": "^6.3.5"
+  }
+}

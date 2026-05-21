@@ -1,0 +1,190 @@
+:root {
+  color: #202124;
+  background: #f7f7f4;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+.vetra-demo-shell {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.vetra-demo-sidebar {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 20px;
+  border-right: 1px solid #dedbd2;
+  background: #ffffff;
+  padding: 24px;
+}
+
+.vetra-demo-sidebar h1 {
+  margin: 0;
+  color: #111827;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.vetra-demo-sidebar dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0;
+}
+
+.vetra-demo-sidebar dl div {
+  border: 1px solid #dedbd2;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.vetra-demo-sidebar dt {
+  color: #5f6368;
+  font-size: 12px;
+}
+
+.vetra-demo-sidebar dd {
+  margin: 4px 0 0;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.vetra-demo-sidebar textarea {
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  border: 1px solid #dedbd2;
+  border-radius: 6px;
+  color: #343741;
+  background: #fbfbfa;
+  padding: 12px;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.vetra-demo-editor {
+  min-width: 0;
+  padding: 32px clamp(24px, 5vw, 72px);
+}
+
+.vetra-editor-root {
+  height: calc(100vh - 64px);
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.vetra-virtual-list {
+  height: 100%;
+  overflow: auto;
+  padding: 8px 0;
+}
+
+.vetra-block {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-radius: 6px;
+  color: #202124;
+  background: transparent;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.vetra-block:hover,
+.vetra-block--active {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #dedbd2;
+}
+
+.vetra-block--heading h1,
+.vetra-block--heading h2,
+.vetra-block--heading h3,
+.vetra-block--heading h4,
+.vetra-block--heading h5,
+.vetra-block--heading h6 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.vetra-block--quote blockquote {
+  margin: 0;
+  border-left: 3px solid #7c8a6a;
+  color: #4b5563;
+  padding-left: 12px;
+}
+
+.vetra-block--code pre,
+.vetra-code-editor {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #202124;
+  color: #f3f4f6;
+  padding: 12px;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.vetra-code-editor {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.vetra-inline-editor {
+  min-height: 24px;
+  outline: 0;
+}
+
+.vetra-inline-placeholder {
+  color: #8b8f96;
+}
+
+.vetra-block--divider {
+  padding: 12px;
+}
+
+.vetra-block--divider hr {
+  border: 0;
+  border-top: 1px solid #dedbd2;
+}
+
+@media (max-width: 840px) {
+  .vetra-demo-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .vetra-demo-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid #dedbd2;
+  }
+
+  .vetra-demo-sidebar textarea {
+    max-height: 220px;
+  }
+}

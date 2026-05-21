@@ -1,0 +1,150 @@
+/** @vitest-environment jsdom */
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { describe, expect, it } from 'vitest'
+import {
+  createDocument,
+  createEditor,
+  createEditorState,
+  createTextInlineContent,
+  type DocBlock,
+  type EditorRuntime,
+  type ParagraphBlock,
+} from '@vetra/core'
+import {
+  BlockRenderer,
+  EditorProvider,
+  defineReactBlock,
+  useMountedBlockCount,
+  type AnyReactBlockPlugin,
+  type BlockRendererProps,
+} from '../src'
+
+const reactActEnvironment = globalThis as typeof globalThis & {
+  IS_REACT_ACT_ENVIRONMENT?: boolean
+}
+reactActEnvironment.IS_REACT_ACT_ENVIRONMENT = true
+
+function paragraph(id: string, text: string): ParagraphBlock {
+  return {
+    id,
+    type: 'paragraph',
+    content: createTextInlineContent(text),
+  }
+}
+
+function ParagraphReadonly(props: BlockRendererProps<ParagraphBlock>) {
+  return <div data-renderer="readonly">readonly:{readParagraphText(props.block)}</div>
+}
+
+function ParagraphActive(props: BlockRendererProps<ParagraphBlock>) {
+  return <div data-renderer="active">active:{readParagraphText(props.block)}</div>
+}
+
+const paragraphPlugin = defineReactBlock<ParagraphBlock>({
+  type: 'paragraph',
+  readonlyRenderer: ParagraphReadonly,
+  activeRenderer: ParagraphActive,
+})
+
+function renderBlockRenderer(
+  editor: EditorRuntime,
+  blocks: readonly AnyReactBlockPlugin[],
+  blockId: string,
+  onMountedCount?: (count: number) => void,
+) {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+
+  function MountedCountProbe() {
+    const mountedBlockCount = useMountedBlockCount()
+    onMountedCount?.(mountedBlockCount)
+
+    return null
+  }
+
+  act(() => {
+    root.render(
+      <EditorProvider blocks={blocks} editor={editor}>
+        <MountedCountProbe />
+        <BlockRenderer blockId={blockId} />
+      </EditorProvider>,
+    )
+  })
+
+  return {
+    container,
+    cleanup() {
+      unmountRoot(root)
+      container.remove()
+    },
+  }
+}
+
+function unmountRoot(root: Root) {
+  act(() => {
+    root.unmount()
+  })
+}
+
+describe('BlockRenderer active lifecycle', () => {
+  it('selects a readonly block on click and switches to the active renderer', () => {
+    const editorDocument = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'A')],
+    })
+    const editor = createEditor(createEditorState(editorDocument))
+    let mountedCount = 0
+    const rendered = renderBlockRenderer(editor, [paragraphPlugin], 'block-a', (count) => {
+      mountedCount = count
+    })
+
+    try {
+      expect(rendered.container.textContent).toContain('readonly:A')
+      expect(rendered.container.textContent).not.toContain('active:A')
+      expect(mountedCount).toBe(1)
+
+      const shell = rendered.container.querySelector('[data-vetra-block-shell="block-a"]')
+      if (shell === null) {
+        throw new Error('Expected block shell to render.')
+      }
+
+      act(() => {
+        shell.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(editor.getState().selection).toEqual({ type: 'block', blockId: 'block-a' })
+      expect(rendered.container.textContent).toContain('active:A')
+      expect(rendered.container.textContent).not.toContain('readonly:A')
+      expect(mountedCount).toBe(1)
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('keeps the unknown block fallback when no renderer is registered', () => {
+    const unknownBlock: DocBlock = {
+      id: 'unknown-a',
+      type: 'unknown-widget',
+    }
+    const editorDocument = createDocument({
+      id: 'doc',
+      blocks: [unknownBlock],
+    })
+    const editor = createEditor(createEditorState(editorDocument))
+    const rendered = renderBlockRenderer(editor, [], 'unknown-a')
+
+    try {
+      expect(rendered.container.textContent).toContain('Unknown block: unknown-widget')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+})
+
+function readParagraphText(block: ParagraphBlock): string {
+  const firstNode = block.content.children[0]
+
+  return firstNode?.type === 'text' ? firstNode.text : ''
+}

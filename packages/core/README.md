@@ -1,0 +1,15 @@
+# @vetra/core
+
+Framework-agnostic Vetra runtime package.
+
+This package owns:
+
+- `DocumentState`
+- block tree helpers
+- command dispatch
+- selection model
+- transaction shape
+- minimal runtime store
+- plugin contracts
+
+It must not depend on React, DOM, Lexical, TanStack Virtual, or import/export format parsers.

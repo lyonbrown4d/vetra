@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+storybook-static/
+test-results/
+playwright-report/
+.turbo/
+.codex-run/
+.idea/
+.DS_Store
+*.tsbuildinfo

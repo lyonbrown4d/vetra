@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/import-markdown" },
+    { "path": "./packages/export-markdown" },
+    { "path": "./packages/import-plain-text" },
+    { "path": "./packages/export-plain-text" },
+    { "path": "./packages/persistence-json" },
+    { "path": "./packages/react" },
+    { "path": "./packages/lexical" },
+    { "path": "./packages/blocks-basic" },
+    { "path": "./packages/demo" }
+  ]
+}
