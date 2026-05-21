@@ -3,7 +3,7 @@ import {
   CURRENT_SERIALIZED_DOCUMENT_VERSION,
   VETRA_JSON_FORMAT,
   type SerializedDocument,
-} from './serializedDocument'
+} from '@vetra/persistence-json/serializedDocument'
 
 export function serializeDocument(document: DocumentState): SerializedDocument {
   return {

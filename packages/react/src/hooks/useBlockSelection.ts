@@ -5,8 +5,8 @@ import {
   type BlockId,
   type DocumentSelection,
 } from '@vetra/core'
-import { areDocumentSelectionsEqual } from './selectionEquality'
-import { useEditorSelector } from './useEditorSelector'
+import { areDocumentSelectionsEqual } from '@vetra/react/hooks/selectionEquality'
+import { useEditorSelector } from '@vetra/react/hooks/useEditorSelector'
 
 export interface BlockSelectionState {
   readonly selection: DocumentSelection

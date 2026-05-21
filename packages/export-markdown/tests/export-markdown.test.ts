@@ -8,7 +8,7 @@ import {
   type ParagraphBlock,
   type QuoteBlock,
 } from '@vetra/core'
-import { documentToMarkdown } from '../src'
+import { documentToMarkdown } from '@vetra/export-markdown'
 
 interface CodeBlock extends DocBlock {
   readonly type: 'code'

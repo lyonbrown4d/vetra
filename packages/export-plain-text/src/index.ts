@@ -1,1 +1,1 @@
-export * from './exportPlainText'
+export * from '@vetra/export-plain-text/exportPlainText'

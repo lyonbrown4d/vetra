@@ -18,7 +18,7 @@ import {
   useMountedBlockCount,
   type AnyReactBlockPlugin,
   type BlockRendererProps,
-} from '../src'
+} from '@vetra/react'
 
 const reactActEnvironment = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean

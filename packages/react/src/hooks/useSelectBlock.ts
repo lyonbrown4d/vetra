@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import type { BlockId, CommandError, Result, Transaction } from '@vetra/core'
-import { useEditor } from '../context/EditorContext'
+import { useEditor } from '@vetra/react/context/EditorContext'
 
 export type SelectBlockHandler = () => Result<Transaction, CommandError>
 

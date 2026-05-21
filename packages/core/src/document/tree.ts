@@ -1,4 +1,4 @@
-import type { BlockId, DocumentState } from './types'
+import type { BlockId, DocumentState } from '@vetra/core/document/types'
 
 export function getBlockChildren(document: DocumentState, blockId: BlockId): readonly BlockId[] {
   return document.children[blockId] ?? []

@@ -1,6 +1,6 @@
-import { err, ok, type Result } from '../result'
-import type { EditorState } from '../state/types'
-import type { Transaction } from '../transaction/types'
+import { err, ok, type Result } from '@vetra/core/result'
+import type { EditorState } from '@vetra/core/state/types'
+import type { Transaction } from '@vetra/core/transaction/types'
 
 export interface HistoryState {
   readonly undoStack: readonly Transaction[]

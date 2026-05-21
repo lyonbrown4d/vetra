@@ -1,5 +1,5 @@
-import type { EditorCommand } from '../command/types'
-import type { EditorState } from '../state/types'
+import type { EditorCommand } from '@vetra/core/command/types'
+import type { EditorState } from '@vetra/core/state/types'
 
 export interface Transaction {
   readonly command: EditorCommand

@@ -1,5 +1,5 @@
 import type { DocumentState } from '@vetra/core'
-import { useEditorSelector } from './useEditorSelector'
+import { useEditorSelector } from '@vetra/react/hooks/useEditorSelector'
 
 const selectDocument = (state: { readonly document: DocumentState }): DocumentState =>
   state.document

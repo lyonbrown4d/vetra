@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import type { BlockId } from '@vetra/core'
-import { useEditorDebugStore } from '../context/EditorDebugContext'
+import { useEditorDebugStore } from '@vetra/react/context/EditorDebugContext'
 
 export function useMountedBlockCount(): number {
   const debugStore = useEditorDebugStore()

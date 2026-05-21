@@ -12,7 +12,7 @@
     "build": "tsc -b",
     "build-storybook": "node scripts/run-storybook-build.mjs",
     "clean": "pnpm -r clean",
-    "dev": "pnpm --filter vetra-demo dev",
+    "dev": "pnpm --filter vetra-playground dev",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "lint": "eslint .",

@@ -12,7 +12,7 @@ import {
   LEGACY_SERIALIZED_DOCUMENT_VERSION,
   VETRA_JSON_FORMAT,
   type SerializedDocument,
-} from './serializedDocument'
+} from '@vetra/persistence-json/serializedDocument'
 
 export interface MigrationError {
   readonly code: 'unsupportedFormat' | 'unsupportedVersion' | 'invalidDocument'

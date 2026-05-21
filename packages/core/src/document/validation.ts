@@ -1,5 +1,5 @@
-import { err, ok, type Result } from '../result'
-import type { BlockId, DocumentState } from './types'
+import { err, ok, type Result } from '@vetra/core/result'
+import type { BlockId, DocumentState } from '@vetra/core/document/types'
 
 export type DocumentValidationErrorCode =
   | 'rootNotFound'

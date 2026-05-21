@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { validateDocument, type DocumentState, type InlineContent } from '@vetra/core'
-import { markdownToDocument } from '../src'
+import { markdownToDocument } from '@vetra/import-markdown'
 
 function inlineText(content: unknown): string {
   const inlineContent = content as InlineContent

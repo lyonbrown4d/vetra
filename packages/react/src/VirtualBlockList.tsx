@@ -1,8 +1,8 @@
 import { useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { BlockId } from '@vetra/core'
-import { BlockRenderer } from './BlockRenderer'
-import { useDocument } from './hooks/useDocument'
+import { BlockRenderer } from '@vetra/react/BlockRenderer'
+import { useDocument } from '@vetra/react/hooks/useDocument'
 
 export interface VirtualBlockListProps {
   readonly blockIds?: readonly BlockId[]

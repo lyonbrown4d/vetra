@@ -4,6 +4,9 @@ import {
   createEditorState,
   createTextInlineContent,
   dispatchCommand,
+  getAdjacentBlockSelection,
+  getAdjacentSiblingBlockId,
+  getSelectionFocusBlockId,
   getSelectionReferencedBlockIds,
   isBlockSelection,
   isNoneSelection,
@@ -12,8 +15,9 @@ import {
   normalizeSelection,
   selectionTouchesBlock,
   type DocumentSelection,
+  type DocumentState,
   type ParagraphBlock,
-} from '../src'
+} from '@vetra/core'
 
 function paragraph(id: string, text: string): ParagraphBlock {
   return {
@@ -84,6 +88,57 @@ describe('selection helpers', () => {
     expect(selectionTouchesBlock(selection, 'block-c')).toBe(false)
   })
 
+  it('returns the focus block id without exposing browser selection state', () => {
+    expect(getSelectionFocusBlockId({ type: 'none' })).toBeUndefined()
+    expect(getSelectionFocusBlockId({ type: 'block', blockId: 'block-a' })).toBe('block-a')
+    expect(
+      getSelectionFocusBlockId({
+        type: 'text',
+        blockId: 'block-b',
+        anchor: { path: [], offset: 0 },
+        focus: { path: [], offset: 1 },
+      }),
+    ).toBe('block-b')
+    expect(
+      getSelectionFocusBlockId({
+        type: 'range-block',
+        anchorBlockId: 'block-a',
+        focusBlockId: 'block-b',
+      }),
+    ).toBe('block-b')
+  })
+
+  it('finds adjacent sibling blocks by parent child order and stable ids', () => {
+    const document = nestedDocument()
+
+    expect(getAdjacentSiblingBlockId(document, 'block-b', 'previous')).toBe('block-a')
+    expect(getAdjacentSiblingBlockId(document, 'block-b', 'next')).toBe('block-c')
+    expect(getAdjacentSiblingBlockId(document, 'block-a', 'previous')).toBeUndefined()
+    expect(getAdjacentSiblingBlockId(document, 'block-c', 'next')).toBeUndefined()
+    expect(getAdjacentSiblingBlockId(document, 'child-a', 'next')).toBeUndefined()
+    expect(getAdjacentSiblingBlockId(document, 'missing', 'next')).toBeUndefined()
+  })
+
+  it('creates adjacent block selections only from block selection', () => {
+    const document = nestedDocument()
+
+    expect(
+      getAdjacentBlockSelection(document, { type: 'block', blockId: 'block-b' }, 'previous'),
+    ).toEqual({ type: 'block', blockId: 'block-a' })
+    expect(
+      getAdjacentBlockSelection(
+        document,
+        {
+          type: 'text',
+          blockId: 'block-b',
+          anchor: { path: [], offset: 0 },
+          focus: { path: [], offset: 0 },
+        },
+        'next',
+      ),
+    ).toBeUndefined()
+  })
+
   it('normalizes selections with missing block references to none', () => {
     const document = createDocument({
       id: 'doc',
@@ -112,6 +167,28 @@ describe('selection helpers', () => {
     ).toEqual({ type: 'none' })
   })
 })
+
+function nestedDocument(): DocumentState {
+  return {
+    id: 'doc',
+    version: 1,
+    rootId: 'root',
+    blocks: {
+      root: { id: 'root', type: 'root' },
+      'block-a': paragraph('block-a', 'A'),
+      'block-b': paragraph('block-b', 'B'),
+      'block-c': paragraph('block-c', 'C'),
+      'child-a': paragraph('child-a', 'Child'),
+    },
+    children: {
+      root: ['block-a', 'block-b', 'block-c'],
+      'block-a': ['child-a'],
+      'block-b': [],
+      'block-c': [],
+      'child-a': [],
+    },
+  }
+}
 
 describe('selection command stability', () => {
   it('keeps text selection attached to the same block id after move', () => {

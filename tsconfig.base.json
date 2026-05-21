@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
     "declaration": true,
     "declarationMap": true,
     "exactOptionalPropertyTypes": true,
@@ -17,14 +18,26 @@
     "paths": {
       "@vetra/blocks-basic": ["./packages/blocks-basic/src/index.ts"],
       "@vetra/blocks-basic/react": ["./packages/blocks-basic/src/react.tsx"],
+      "@vetra/blocks-basic/*": ["./packages/blocks-basic/src/*"],
       "@vetra/core": ["./packages/core/src/index.ts"],
+      "@vetra/core/*": ["./packages/core/src/*"],
       "@vetra/export-markdown": ["./packages/export-markdown/src/index.ts"],
+      "@vetra/export-markdown/*": ["./packages/export-markdown/src/*"],
       "@vetra/export-plain-text": ["./packages/export-plain-text/src/index.ts"],
+      "@vetra/export-plain-text/*": ["./packages/export-plain-text/src/*"],
       "@vetra/import-markdown": ["./packages/import-markdown/src/index.ts"],
+      "@vetra/import-markdown/*": ["./packages/import-markdown/src/*"],
       "@vetra/import-plain-text": ["./packages/import-plain-text/src/index.ts"],
+      "@vetra/import-plain-text/*": ["./packages/import-plain-text/src/*"],
       "@vetra/lexical": ["./packages/lexical/src/index.ts"],
+      "@vetra/lexical/*": ["./packages/lexical/src/*"],
       "@vetra/persistence-json": ["./packages/persistence-json/src/index.ts"],
-      "@vetra/react": ["./packages/react/src/index.ts"]
+      "@vetra/persistence-json/*": ["./packages/persistence-json/src/*"],
+      "@vetra/playground/*": ["./packages/demo/src/*"],
+      "@vetra/react": ["./packages/react/src/index.ts"],
+      "@vetra/react/*": ["./packages/react/src/*"],
+      "@vetra/stories/*": ["./stories/*"],
+      "@vetra/tests/*": ["./tests/*"]
     },
     "pretty": true,
     "rootDir": ".",

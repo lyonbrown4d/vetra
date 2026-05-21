@@ -1,8 +1,8 @@
 import { createContext, useContext, useMemo, type Context, type ReactNode } from 'react'
 import type { EditorRuntime } from '@vetra/core'
-import { createEditorDebugStore, EditorDebugContext } from './context/EditorDebugContext'
-import { EditorContext } from './context/EditorContext'
-import type { AnyReactBlockPlugin } from './renderer/types'
+import { createEditorDebugStore, EditorDebugContext } from '@vetra/react/context/EditorDebugContext'
+import { EditorContext } from '@vetra/react/context/EditorContext'
+import type { AnyReactBlockPlugin } from '@vetra/react/renderer/types'
 
 export interface EditorProviderProps {
   readonly editor: EditorRuntime

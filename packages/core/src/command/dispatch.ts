@@ -1,11 +1,16 @@
-import { err, ok, type Result } from '../result'
-import type { Transaction } from '../transaction/types'
-import { noneSelection } from '../selection/types'
-import type { DocumentSelection } from '../selection/types'
-import type { BlockId, DocBlock, DocumentState } from '../document/types'
-import { collectSubtreeIds, findParentId, getBlockChildren, isDescendantOf } from '../document/tree'
-import type { EditorState } from '../state/types'
-import type { CommandError } from './errors'
+import { err, ok, type Result } from '@vetra/core/result'
+import type { Transaction } from '@vetra/core/transaction/types'
+import { noneSelection } from '@vetra/core/selection/types'
+import type { DocumentSelection } from '@vetra/core/selection/types'
+import type { BlockId, DocBlock, DocumentState } from '@vetra/core/document/types'
+import {
+  collectSubtreeIds,
+  findParentId,
+  getBlockChildren,
+  isDescendantOf,
+} from '@vetra/core/document/tree'
+import type { EditorState } from '@vetra/core/state/types'
+import type { CommandError } from '@vetra/core/command/errors'
 import type {
   ConvertBlockTypeCommand,
   DeleteBlockCommand,
@@ -19,7 +24,7 @@ import type {
   SetSelectionCommand,
   SplitBlockCommand,
   UpdateBlockCommand,
-} from './types'
+} from '@vetra/core/command/types'
 
 interface CommandStateChange {
   readonly state: EditorState

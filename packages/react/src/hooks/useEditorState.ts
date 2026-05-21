@@ -1,5 +1,5 @@
 import type { EditorState } from '@vetra/core'
-import { useEditorSelector } from './useEditorSelector'
+import { useEditorSelector } from '@vetra/react/hooks/useEditorSelector'
 
 const selectEditorState = (state: EditorState): EditorState => state
 

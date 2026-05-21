@@ -1,4 +1,4 @@
-import type { BlockPlugin } from '../block/schema'
+import type { BlockPlugin } from '@vetra/core/block/schema'
 
 export interface VetraPlugin {
   readonly name: string

@@ -5,7 +5,7 @@ import {
   createTextInlineContent,
   dispatchCommand,
   type ParagraphBlock,
-} from '../src'
+} from '@vetra/core'
 
 function paragraph(id: string, text: string): ParagraphBlock {
   return {

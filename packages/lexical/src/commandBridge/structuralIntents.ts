@@ -1,5 +1,8 @@
 import { createEmptyInlineContent, type InlineContent, type InlineNode } from '@vetra/core'
-import { canRunStructuralKeyCommand, type LexicalBlockEditorCompositionState } from '../composition'
+import {
+  canRunStructuralKeyCommand,
+  type LexicalBlockEditorCompositionState,
+} from '@vetra/lexical/composition'
 
 export type LexicalBlockCommitReason = 'blur' | 'unmount'
 
@@ -27,6 +30,44 @@ export interface LexicalMergeBlockBackwardIntent {
 }
 
 export type LexicalBlockStructuralIntent = LexicalSplitBlockIntent | LexicalMergeBlockBackwardIntent
+export type LexicalBlockStructuralIntentResult = unknown
+
+export interface LexicalBlockStructuralIntentCallbacks {
+  readonly onMergeBlockBackward:
+    | ((intent: LexicalMergeBlockBackwardIntent) => LexicalBlockStructuralIntentResult)
+    | undefined
+  readonly onSplitBlock:
+    | ((intent: LexicalSplitBlockIntent) => LexicalBlockStructuralIntentResult)
+    | undefined
+  readonly onStructuralIntent:
+    | ((intent: LexicalBlockStructuralIntent) => LexicalBlockStructuralIntentResult)
+    | undefined
+}
+
+export function dispatchLexicalBlockStructuralIntent(
+  intent: LexicalBlockStructuralIntent,
+  callbacks: LexicalBlockStructuralIntentCallbacks,
+): boolean {
+  const genericResult = callbacks.onStructuralIntent?.(intent)
+  const hasGenericHandler = callbacks.onStructuralIntent !== undefined
+
+  switch (intent.type) {
+    case 'splitBlock':
+      return resolveStructuralIntentHandlerResult(
+        callbacks.onSplitBlock,
+        hasGenericHandler,
+        genericResult,
+        intent,
+      )
+    case 'mergeBlockBackward':
+      return resolveStructuralIntentHandlerResult(
+        callbacks.onMergeBlockBackward,
+        hasGenericHandler,
+        genericResult,
+        intent,
+      )
+  }
+}
 
 export function createSplitBlockIntent(
   boundary: LexicalInlineContentBoundary,
@@ -235,4 +276,17 @@ function clampTextOffset(textOffset: number, textLength: number): number {
   }
 
   return textOffset
+}
+
+function resolveStructuralIntentHandlerResult<TIntent extends LexicalBlockStructuralIntent>(
+  handler: ((intent: TIntent) => LexicalBlockStructuralIntentResult) | undefined,
+  hasGenericHandler: boolean,
+  genericResult: LexicalBlockStructuralIntentResult,
+  intent: TIntent,
+): boolean {
+  if (handler !== undefined) {
+    return handler(intent) !== false
+  }
+
+  return hasGenericHandler && genericResult !== false
 }

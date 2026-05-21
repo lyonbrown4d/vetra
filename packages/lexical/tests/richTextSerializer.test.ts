@@ -5,7 +5,7 @@ import {
   createLexicalAdapterTextNode,
   inlineContentToLexicalAdapterState,
   lexicalAdapterStateToInlineContent,
-} from '../src/serializers/richText'
+} from '@vetra/lexical/serializers/richText'
 
 describe('lexical rich text serializer', () => {
   it('roundtrips text and preserves inline marks as Lexical text format flags', () => {

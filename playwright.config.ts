@@ -7,6 +7,11 @@ const webServer =
         command:
           'node ../../node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort',
         cwd: './packages/demo',
+        env: {
+          ...process.env,
+          VETRA_PLAYWRIGHT: 'true',
+          VETRA_REACT_SCAN: 'false',
+        },
         gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 500 },
         port: 5173,
         reuseExistingServer: true,

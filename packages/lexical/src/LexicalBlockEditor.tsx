@@ -33,25 +33,27 @@ import type { InlineContent } from '@vetra/core'
 import {
   createMergeBlockBackwardIntent,
   createSplitBlockIntent,
+  dispatchLexicalBlockStructuralIntent,
   type LexicalBlockContentCommit,
   type LexicalBlockCommitReason,
   type LexicalBlockStructuralIntent,
+  type LexicalBlockStructuralIntentCallbacks,
   type LexicalInlineContentBoundary,
   type LexicalMergeBlockBackwardIntent,
   type LexicalSplitBlockIntent,
-} from './commandBridge/structuralIntents'
+} from '@vetra/lexical/commandBridge/structuralIntents'
 import {
   canRunStructuralKeyCommand,
   isStructuralKey,
   type LexicalBlockEditorCompositionState,
-} from './composition'
+} from '@vetra/lexical/composition'
 import {
   createLexicalAdapterState,
   createLexicalAdapterTextNode,
   inlineContentToLexicalAdapterState,
   lexicalAdapterStateToInlineContent,
   type LexicalAdapterTextNode,
-} from './serializers/richText'
+} from '@vetra/lexical/serializers/richText'
 
 export interface LexicalBlockEditorProps {
   readonly value: InlineContent
@@ -66,17 +68,14 @@ export interface LexicalBlockEditorProps {
   readonly onStructuralIntent?: (intent: LexicalBlockStructuralIntent) => void
 }
 
-interface LexicalBlockEditorBridgeCallbacks {
+interface LexicalBlockEditorBridgeCallbacks extends LexicalBlockStructuralIntentCallbacks {
   readonly onCommit: ((commit: LexicalBlockContentCommit) => void) | undefined
-  readonly onMergeBlockBackward: ((intent: LexicalMergeBlockBackwardIntent) => void) | undefined
-  readonly onSplitBlock: ((intent: LexicalSplitBlockIntent) => void) | undefined
-  readonly onStructuralIntent: ((intent: LexicalBlockStructuralIntent) => void) | undefined
 }
 
 export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
   const initialState = inlineContentToLexicalAdapterState(props.value)
   const latestValueRef = useRef(props.value)
-  const suppressLifecycleCommitRef = useRef(false)
+  const ignoreContentUpdatesAfterStructuralIntentRef = useRef(false)
   const compositionStateRef = useRef<LexicalBlockEditorCompositionState>({
     isComposing: false,
   })
@@ -91,7 +90,7 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
       'unmount',
       latestValueRef.current,
       bridgeCallbacksRef.current,
-      suppressLifecycleCommitRef,
+      ignoreContentUpdatesAfterStructuralIntentRef,
     )
   }, [bridgeCallbacksRef])
 
@@ -126,7 +125,7 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
       'blur',
       latestValueRef.current,
       bridgeCallbacksRef.current,
-      suppressLifecycleCommitRef,
+      ignoreContentUpdatesAfterStructuralIntentRef,
     )
   }
 
@@ -168,10 +167,13 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
       />
       <OnChangePlugin
         onChange={(editorState: EditorState) => {
+          if (ignoreContentUpdatesAfterStructuralIntentRef.current) {
+            return
+          }
+
           editorState.read(() => {
             const nextValue = readInlineContentFromLexicalRoot()
             latestValueRef.current = nextValue
-            suppressLifecycleCommitRef.current = false
             props.onChange(nextValue)
           })
         }}
@@ -179,7 +181,7 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
       <StructuralCommandBridgePlugin
         bridgeCallbacksRef={bridgeCallbacksRef}
         compositionStateRef={compositionStateRef}
-        suppressLifecycleCommitRef={suppressLifecycleCommitRef}
+        ignoreContentUpdatesAfterStructuralIntentRef={ignoreContentUpdatesAfterStructuralIntentRef}
       />
     </LexicalComposer>
   )
@@ -188,7 +190,7 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
 function StructuralCommandBridgePlugin(props: {
   readonly bridgeCallbacksRef: RefObject<LexicalBlockEditorBridgeCallbacks>
   readonly compositionStateRef: RefObject<LexicalBlockEditorCompositionState>
-  readonly suppressLifecycleCommitRef: RefObject<boolean>
+  readonly ignoreContentUpdatesAfterStructuralIntentRef: RefObject<boolean>
 }) {
   const [editor] = useLexicalComposerContext()
 
@@ -199,7 +201,7 @@ function StructuralCommandBridgePlugin(props: {
         const compositionState = readCompositionState(props.compositionStateRef, event)
 
         if (!canRunStructuralKeyCommand(compositionState)) {
-          return true
+          return false
         }
 
         const boundary = readInlineContentBoundaryFromLexicalSelection()
@@ -214,10 +216,15 @@ function StructuralCommandBridgePlugin(props: {
           return false
         }
 
+        const handled = dispatchStructuralIntent(intent, props.bridgeCallbacksRef.current)
+
+        if (!handled) {
+          return false
+        }
+
         event?.preventDefault()
-        props.suppressLifecycleCommitRef.current = true
-        dispatchStructuralIntent(intent, props.bridgeCallbacksRef.current)
-        return true
+        props.ignoreContentUpdatesAfterStructuralIntentRef.current = true
+        return handled
       },
       COMMAND_PRIORITY_HIGH,
     )
@@ -242,10 +249,15 @@ function StructuralCommandBridgePlugin(props: {
           return false
         }
 
+        const handled = dispatchStructuralIntent(intent, props.bridgeCallbacksRef.current)
+
+        if (!handled) {
+          return false
+        }
+
         event.preventDefault()
-        props.suppressLifecycleCommitRef.current = true
-        dispatchStructuralIntent(intent, props.bridgeCallbacksRef.current)
-        return true
+        props.ignoreContentUpdatesAfterStructuralIntentRef.current = true
+        return handled
       },
       COMMAND_PRIORITY_HIGH,
     )
@@ -258,7 +270,7 @@ function StructuralCommandBridgePlugin(props: {
     editor,
     props.bridgeCallbacksRef,
     props.compositionStateRef,
-    props.suppressLifecycleCommitRef,
+    props.ignoreContentUpdatesAfterStructuralIntentRef,
   ])
 
   return null
@@ -283,9 +295,9 @@ function emitContentCommit(
   reason: LexicalBlockCommitReason,
   content: InlineContent,
   callbacks: LexicalBlockEditorBridgeCallbacks,
-  suppressLifecycleCommitRef: RefObject<boolean>,
+  ignoreContentUpdatesAfterStructuralIntentRef: RefObject<boolean>,
 ): void {
-  if (suppressLifecycleCommitRef.current) {
+  if (ignoreContentUpdatesAfterStructuralIntentRef.current) {
     return
   }
 
@@ -299,17 +311,8 @@ function emitContentCommit(
 function dispatchStructuralIntent(
   intent: LexicalBlockStructuralIntent,
   callbacks: LexicalBlockEditorBridgeCallbacks,
-): void {
-  callbacks.onStructuralIntent?.(intent)
-
-  switch (intent.type) {
-    case 'splitBlock':
-      callbacks.onSplitBlock?.(intent)
-      return
-    case 'mergeBlockBackward':
-      callbacks.onMergeBlockBackward?.(intent)
-      return
-  }
+): boolean {
+  return dispatchLexicalBlockStructuralIntent(intent, callbacks)
 }
 
 function createLexicalTextNode(node: LexicalAdapterTextNode) {

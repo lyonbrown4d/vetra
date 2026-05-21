@@ -1,4 +1,4 @@
-import type { BlockId, DocBlock, DocumentState, RootBlock } from './types'
+import type { BlockId, DocBlock, DocumentState, RootBlock } from '@vetra/core/document/types'
 
 export interface CreateDocumentOptions {
   readonly id: string

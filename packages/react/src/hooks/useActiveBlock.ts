@@ -4,7 +4,7 @@ import {
   type BlockId,
   type DocBlock,
 } from '@vetra/core'
-import { useEditorSelector } from './useEditorSelector'
+import { useEditorSelector } from '@vetra/react/hooks/useEditorSelector'
 
 export interface ActiveBlockState {
   readonly blockId: BlockId | undefined

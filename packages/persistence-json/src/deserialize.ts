@@ -1,5 +1,5 @@
 import type { DocumentState, Result } from '@vetra/core'
-import { migrateSerializedDocument, type MigrationError } from './migration'
+import { migrateSerializedDocument, type MigrationError } from '@vetra/persistence-json/migration'
 
 export function deserializeDocument(value: unknown): Result<DocumentState, MigrationError> {
   const migrated = migrateSerializedDocument(value)

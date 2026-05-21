@@ -9,7 +9,7 @@ This package owns:
 - command dispatch
 - selection model
 - transaction shape
-- minimal runtime store
+- runtime store with document undo/redo history
 - plugin contracts
 
 It must not depend on React, DOM, Lexical, TanStack Virtual, or import/export format parsers.

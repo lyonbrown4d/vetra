@@ -1,4 +1,4 @@
-import type { InlineContent } from './inlineContent'
+import type { InlineContent } from '@vetra/core/document/inlineContent'
 
 export type BlockId = string
 

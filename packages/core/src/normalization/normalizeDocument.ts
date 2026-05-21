@@ -1,4 +1,4 @@
-import type { BlockId, DocBlock, DocumentState } from '../document/types'
+import type { BlockId, DocBlock, DocumentState } from '@vetra/core/document/types'
 
 export type DocumentNormalizationChangeCode =
   | 'alignedBlockIdWithMapKey'

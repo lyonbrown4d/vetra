@@ -1,4 +1,4 @@
-import type { BlockId } from '../document/types'
+import type { BlockId } from '@vetra/core/document/types'
 
 export type DocumentSelection = NoneSelection | BlockSelection | TextSelection | RangeBlockSelection
 

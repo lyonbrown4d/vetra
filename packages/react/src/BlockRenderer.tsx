@@ -1,10 +1,10 @@
 import { useCallback, type KeyboardEvent, type MouseEvent } from 'react'
 import type { BlockId, DocBlock } from '@vetra/core'
-import { useEditor } from './context/EditorContext'
-import { useBlockRegistry } from './EditorProvider'
-import { useActiveBlockLifecycle } from './hooks/useActiveBlockLifecycle'
-import { useBlock } from './hooks/useBlock'
-import { useMountedBlockRegistration } from './hooks/useMountedBlockMetrics'
+import { useEditor } from '@vetra/react/context/EditorContext'
+import { useBlockRegistry } from '@vetra/react/EditorProvider'
+import { useActiveBlockLifecycle } from '@vetra/react/hooks/useActiveBlockLifecycle'
+import { useBlock } from '@vetra/react/hooks/useBlock'
+import { useMountedBlockRegistration } from '@vetra/react/hooks/useMountedBlockMetrics'
 
 export interface BlockRendererRootProps {
   readonly blockId: BlockId
@@ -64,7 +64,7 @@ export function BlockRenderer(props: BlockRendererRootProps) {
       onClick={blockLifecycle.active ? undefined : handleClick}
       onKeyDown={blockLifecycle.active ? undefined : handleKeyDown}
       role={blockLifecycle.active ? undefined : 'button'}
-      tabIndex={blockLifecycle.active ? undefined : 0}
+      tabIndex={0}
     >
       <Renderer
         active={blockLifecycle.active}

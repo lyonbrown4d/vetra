@@ -8,7 +8,7 @@ import {
   type DocumentState,
   type ParagraphBlock,
   type Transaction,
-} from '../src'
+} from '@vetra/core'
 
 function paragraph(id: string, text: string): ParagraphBlock {
   return {

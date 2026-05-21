@@ -373,7 +373,7 @@ Core 层需要为多 renderer 保持边界，但 V1 只实现 React renderer。
 - Unit Test: Vitest
 - UI / E2E / Performance Test: Playwright
 - Component Preview: Storybook
-- Demo: React + Vite
+- Playground: React + Vite
 
 ### 6.2 为什么 Core 不绑定 framework
 
@@ -567,7 +567,7 @@ vetra/
         SelectionInspector.tsx
         PerformancePanel.tsx
 
-    demo/
+    playground/
       src/
         App.tsx
         fixtures/
@@ -1123,7 +1123,7 @@ export interface ReactBlockPlugin<TBlock extends DocBlock = DocBlock> {
 - readonly renderer；
 - JSON import/export；
 - Storybook；
-- demo 页面；
+- playground 页面；
 - benchmark fixture；
 - 单元测试；
 - Playwright E2E；
@@ -1157,7 +1157,7 @@ export interface ReactBlockPlugin<TBlock extends DocBlock = DocBlock> {
 
 产出：
 
-- React demo；
+- React playground；
 - benchmark fixture；
 - 初始核心模型；
 - 技术风险记录。
@@ -1195,7 +1195,7 @@ export interface ReactBlockPlugin<TBlock extends DocBlock = DocBlock> {
 
 - packages/react；
 - packages/blocks-basic；
-- demo app；
+- playground app；
 - Storybook。
 
 ### M3：Lexical Adapter
@@ -1227,7 +1227,7 @@ export interface ReactBlockPlugin<TBlock extends DocBlock = DocBlock> {
 产出：
 
 - alpha release；
-- demo site；
+- playground site；
 - benchmark report。
 
 ---

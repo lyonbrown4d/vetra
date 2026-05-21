@@ -15,6 +15,15 @@ const coreRestrictedImports = [
   'rehype',
   'unified',
 ]
+const localRelativeImportPatterns = ['./*', '../*']
+const localRelativeImportPaths = ['.', '..']
+const coreRestrictedImportPatterns = [
+  ...localRelativeImportPatterns,
+  '@lexical/*',
+  '@tanstack/*',
+  'remark-*',
+  'rehype-*',
+]
 
 export default tseslint.config(
   {
@@ -49,13 +58,25 @@ export default tseslint.config(
     },
   },
   {
+    files: ['**/*.ts', '**/*.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: localRelativeImportPatterns,
+          paths: localRelativeImportPaths,
+        },
+      ],
+    },
+  },
+  {
     files: ['packages/core/src/**/*.{ts,tsx}', 'packages/core/tests/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
         'error',
         {
-          paths: coreRestrictedImports,
-          patterns: ['@lexical/*', '@tanstack/*', 'remark-*', 'rehype-*'],
+          paths: [...coreRestrictedImports, ...localRelativeImportPaths],
+          patterns: coreRestrictedImportPatterns,
         },
       ],
     },

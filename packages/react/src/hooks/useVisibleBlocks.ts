@@ -1,5 +1,5 @@
 import type { BlockId, DocBlock } from '@vetra/core'
-import { useEditorSelector } from './useEditorSelector'
+import { useEditorSelector } from '@vetra/react/hooks/useEditorSelector'
 
 export interface UseVisibleBlocksOptions {
   readonly parentId?: BlockId

@@ -1,12 +1,14 @@
 import { useMemo } from 'react'
 import {
   isBlockSelection,
+  isRangeBlockSelection,
+  isTextSelection,
   normalizeSelection,
   selectionTouchesBlock,
   type BlockId,
 } from '@vetra/core'
-import { useEditorSelector } from './useEditorSelector'
-import { useSelectBlock, type SelectBlockHandler } from './useSelectBlock'
+import { useEditorSelector } from '@vetra/react/hooks/useEditorSelector'
+import { useSelectBlock, type SelectBlockHandler } from '@vetra/react/hooks/useSelectBlock'
 
 export interface ActiveBlockLifecycleState {
   readonly active: boolean
@@ -24,8 +26,12 @@ export function useActiveBlockLifecycle(blockId: BlockId): ActiveBlockLifecycleS
     const selection = normalizeSelection(state.document, state.selection)
 
     return {
-      active: selectionTouchesBlock(selection, blockId),
-      selected: isBlockSelection(selection) && selection.blockId === blockId,
+      active:
+        (isBlockSelection(selection) && selection.blockId === blockId) ||
+        (isTextSelection(selection) && selection.blockId === blockId),
+      selected:
+        (isBlockSelection(selection) && selection.blockId === blockId) ||
+        (isRangeBlockSelection(selection) && selectionTouchesBlock(selection, blockId)),
     }
   }, areActiveBlockFlagsEqual)
   const selectBlock = useSelectBlock(blockId)

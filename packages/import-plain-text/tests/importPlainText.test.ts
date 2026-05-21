@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { InlineContent } from '@vetra/core'
-import { plainTextToDocument, splitPlainText } from '../src'
+import { plainTextToDocument, splitPlainText } from '@vetra/import-plain-text'
 
 function blockText(content: unknown): string {
   const inlineContent = content as InlineContent

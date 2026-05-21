@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDocument, createTextInlineContent } from '@vetra/core'
 import type { DocBlock, DocumentState, InlineContent } from '@vetra/core'
-import { documentToPlainText, inlineContentToPlainText } from '../src'
+import { documentToPlainText, inlineContentToPlainText } from '@vetra/export-plain-text'
 
 describe('@vetra/export-plain-text', () => {
   it('exports basic blocks into reasonable plain text', () => {

@@ -6,7 +6,7 @@ import {
   type DocBlock,
   type DocumentState,
   type ParagraphBlock,
-} from '../src'
+} from '@vetra/core'
 
 function paragraph(id: string, text = id): ParagraphBlock {
   return {

@@ -10,7 +10,7 @@ import {
   stringifyDocument,
   VETRA_JSON_FORMAT,
   type MigrationError,
-} from '../src'
+} from '@vetra/persistence-json'
 
 function paragraph(id: string): ParagraphBlock {
   return {

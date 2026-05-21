@@ -1,4 +1,4 @@
-import type { DocBlock } from '../document/types'
+import type { DocBlock } from '@vetra/core/document/types'
 
 export interface BlockSchema<TBlock extends DocBlock = DocBlock> {
   readonly type: TBlock['type']

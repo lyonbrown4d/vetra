@@ -3,11 +3,12 @@ import type { InlineContent } from '@vetra/core'
 import {
   createMergeBlockBackwardIntent,
   createSplitBlockIntent,
+  dispatchLexicalBlockStructuralIntent,
   isStartLikeBoundary,
   splitInlineContentAtTextOffset,
   type LexicalInlineContentBoundary,
-} from '../src/commandBridge/structuralIntents'
-import { canRunStructuralKeyCommand, isStructuralKey } from '../src/composition'
+} from '@vetra/lexical/commandBridge/structuralIntents'
+import { canRunStructuralKeyCommand, isStructuralKey } from '@vetra/lexical/composition'
 
 describe('lexical command bridge helpers', () => {
   it('guards structural keys while IME composition is active', () => {
@@ -117,6 +118,48 @@ describe('lexical command bridge helpers', () => {
       },
     })
     expect(JSON.stringify(split).toLowerCase()).not.toContain('lexical')
+  })
+
+  it('reports whether structural intents were handled by the bridge callbacks', () => {
+    const splitIntent = {
+      type: 'splitBlock',
+      before: inlineText('A'),
+      after: inlineText('B'),
+    } as const
+    const mergeIntent = {
+      type: 'mergeBlockBackward',
+      content: inlineText('B'),
+    } as const
+    const handledTypes: string[] = []
+
+    expect(
+      dispatchLexicalBlockStructuralIntent(splitIntent, {
+        onMergeBlockBackward: undefined,
+        onSplitBlock(intent) {
+          handledTypes.push(intent.type)
+        },
+        onStructuralIntent: undefined,
+      }),
+    ).toBe(true)
+    expect(
+      dispatchLexicalBlockStructuralIntent(mergeIntent, {
+        onMergeBlockBackward() {
+          return false
+        },
+        onSplitBlock: undefined,
+        onStructuralIntent: undefined,
+      }),
+    ).toBe(false)
+    expect(
+      dispatchLexicalBlockStructuralIntent(splitIntent, {
+        onMergeBlockBackward: undefined,
+        onSplitBlock: undefined,
+        onStructuralIntent() {
+          handledTypes.push('generic')
+        },
+      }),
+    ).toBe(true)
+    expect(handledTypes).toEqual(['splitBlock', 'generic'])
   })
 })
 

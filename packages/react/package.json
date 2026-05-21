@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.8",
-    "@vetra/core": "workspace:*"
+    "@vetra/core": "workspace:*",
+    "@vetra/import-plain-text": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.0.0",

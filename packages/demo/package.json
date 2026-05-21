@@ -1,5 +1,5 @@
 {
-  "name": "vetra-demo",
+  "name": "vetra-playground",
   "version": "0.0.0",
   "type": "module",
   "private": true,
@@ -12,13 +12,19 @@
   "dependencies": {
     "@vetra/blocks-basic": "workspace:*",
     "@vetra/core": "workspace:*",
+    "@vetra/export-markdown": "workspace:*",
+    "@vetra/export-plain-text": "workspace:*",
+    "@vetra/import-markdown": "workspace:*",
+    "@vetra/import-plain-text": "workspace:*",
     "@vetra/persistence-json": "workspace:*",
     "@vetra/react": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@react-scan/vite-plugin-react-scan": "^0.2.6",
     "@vitejs/plugin-react": "^4.4.1",
+    "react-scan": "^0.5.6",
     "vite": "^6.3.5"
   }
 }

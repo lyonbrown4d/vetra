@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { LexicalBlockEditor } from '@vetra/lexical'
 import { defineReactBlock, type AnyReactBlockPlugin, type BlockRendererProps } from '@vetra/react'
 import type {
@@ -13,7 +13,7 @@ import type {
   QuoteBlock,
 } from '@vetra/core'
 import { createEmptyInlineContent, findParentId, getBlockChildren } from '@vetra/core'
-import { isInlineContent, type CodeBlock } from './blocks'
+import { isInlineContent, type CodeBlock } from '@vetra/blocks-basic/blocks'
 
 export const basicBlocks: readonly AnyReactBlockPlugin[] = [
   defineReactBlock<ParagraphBlock>({
@@ -88,17 +88,61 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
   const value = isInlineContent(props.block.content)
     ? props.block.content
     : createEmptyInlineContent()
+  const activeBlockRootRef = useRef<HTMLDivElement | null>(null)
+  const ignoreContentUpdatesAfterStructuralIntentRef = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    let secondFrameId: number | undefined
+    const firstFrameId = requestAnimationFrame(() => {
+      secondFrameId = requestAnimationFrame(() => {
+        if (cancelled) {
+          return
+        }
+
+        const editable = activeBlockRootRef.current?.querySelector<HTMLElement>(
+          '.vetra-inline-editor[contenteditable="true"]',
+        )
+
+        if (editable === undefined || editable === null || document.activeElement === editable) {
+          return
+        }
+
+        editable.focus({ preventScroll: true })
+      })
+    })
+
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(firstFrameId)
+      if (secondFrameId !== undefined) {
+        cancelAnimationFrame(secondFrameId)
+      }
+    }
+  }, [props.block.id])
+
+  const updateContent = (nextValue: InlineContent): void => {
+    if (ignoreContentUpdatesAfterStructuralIntentRef.current) {
+      return
+    }
+
+    updateRichTextBlockContent(props, nextValue)
+  }
 
   return (
-    <div className="vetra-block vetra-block--active" data-block-id={props.block.id}>
+    <div
+      className="vetra-block vetra-block--active"
+      data-block-id={props.block.id}
+      ref={activeBlockRootRef}
+    >
       <LexicalBlockEditor
         autoFocus
         className="vetra-inline-editor"
         onChange={(nextValue) => {
-          updateRichTextBlockContent(props, nextValue)
+          updateContent(nextValue)
         }}
         onCommit={(commit) => {
-          updateRichTextBlockContent(props, commit.content)
+          updateContent(commit.content)
         }}
         onMergeBlockBackward={(intent) => {
           const previousBlock = findPreviousSiblingBlock(
@@ -107,7 +151,7 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
           )
 
           if (previousBlock === undefined || !isInlineContent(previousBlock.content)) {
-            return
+            return false
           }
 
           const result = props.editor.dispatch({
@@ -117,11 +161,14 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
             mergedContent: mergeInlineContent(previousBlock.content, intent.content),
           })
           if (result.ok) {
+            ignoreContentUpdatesAfterStructuralIntentRef.current = true
             props.editor.dispatch({
               type: 'setSelection',
               selection: { type: 'block', blockId: previousBlock.id },
             })
           }
+
+          return result.ok
         }}
         onSplitBlock={(intent) => {
           const afterBlockId = createNextBlockId(props.editor.getState().document, props.block.id)
@@ -136,11 +183,14 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
             },
           })
           if (result.ok) {
+            ignoreContentUpdatesAfterStructuralIntentRef.current = true
             props.editor.dispatch({
               type: 'setSelection',
               selection: { type: 'block', blockId: afterBlockId },
             })
           }
+
+          return result.ok
         }}
         placeholder="Type..."
         value={value}

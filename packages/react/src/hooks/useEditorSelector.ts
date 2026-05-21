@@ -1,6 +1,6 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type { EditorState } from '@vetra/core'
-import { useEditor } from '../context/EditorContext'
+import { useEditor } from '@vetra/react/context/EditorContext'
 
 export type EditorStateSelector<TSnapshot> = (state: EditorState) => TSnapshot
 export type EditorSnapshotEquality<TSnapshot> = (previous: TSnapshot, next: TSnapshot) => boolean

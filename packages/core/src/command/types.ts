@@ -1,5 +1,5 @@
-import type { BlockId, DocBlock } from '../document/types'
-import type { DocumentSelection } from '../selection/types'
+import type { BlockId, DocBlock } from '@vetra/core/document/types'
+import type { DocumentSelection } from '@vetra/core/selection/types'
 
 export type EditorCommand =
   | InsertBlockCommand
