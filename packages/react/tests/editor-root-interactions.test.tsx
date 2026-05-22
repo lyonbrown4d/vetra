@@ -166,6 +166,15 @@ function getButton(container: Element, selector: string): HTMLButtonElement {
   return button
 }
 
+function getSlashMenu(container: Element): HTMLElement {
+  const menu = container.querySelector('[data-vetra-slash-menu]')
+  if (!(menu instanceof HTMLElement)) {
+    throw new Error('Expected slash menu to render.')
+  }
+
+  return menu
+}
+
 describe('EditorRoot integrated interactions', () => {
   it('converts the active block from the toolbar', () => {
     const rendered = renderEditor(
@@ -217,6 +226,11 @@ describe('EditorRoot integrated interactions', () => {
           new KeyboardEvent('keydown', { bubbles: true, key: '/' }),
         )
       })
+      const slashMenu = getSlashMenu(rendered.container)
+
+      expect(slashMenu.dataset.floating).toBe('true')
+      expect(slashMenu.style.position).toBe('fixed')
+
       act(() => {
         getButton(rendered.container, '[data-vetra-slash-menu-item="quote"]').dispatchEvent(
           new MouseEvent('click', { bubbles: true }),
@@ -229,6 +243,40 @@ describe('EditorRoot integrated interactions', () => {
       expect(rootChildren).toHaveLength(2)
       expect(insertedBlockId).toBeDefined()
       expect(rendered.latestDocument.blocks[expectDefined(insertedBlockId)]?.type).toBe('quote')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('inserts an empty paragraph from the block gutter plus button and activates it', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor'), paragraph('block-b', 'Next')],
+      }),
+    )
+
+    try {
+      act(() => {
+        getButton(
+          rendered.container,
+          '[data-vetra-block-control-block-id="block-a"][data-vetra-block-control="insert-after"]',
+        ).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+
+      const rootChildren = rendered.latestDocument.children.root ?? []
+      const insertedBlockId = rootChildren[1]
+
+      expect(rootChildren).toHaveLength(3)
+      expect(rootChildren[0]).toBe('block-a')
+      expect(rootChildren[2]).toBe('block-b')
+      expect(
+        readInlineText(rendered.latestDocument.blocks[expectDefined(insertedBlockId)]?.content),
+      ).toBe('')
+      expect(rendered.latestDocument.blocks[expectDefined(insertedBlockId)]?.type).toBe('paragraph')
+      expect(getBlockShell(rendered.container, expectDefined(insertedBlockId)).dataset.active).toBe(
+        'true',
+      )
     } finally {
       rendered.cleanup()
     }

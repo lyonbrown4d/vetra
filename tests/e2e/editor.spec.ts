@@ -70,11 +70,17 @@ test.describe('Vetra demo editor main editing path', () => {
     const beforeChildren = getRootChildren(before)
 
     await activateBlock(page, anchorBlockId)
+    const virtualListTopBeforeMenu = await readLocatorTop(virtualList(page))
     await openSlashMenuFromActiveBlock(page)
 
     const slashMenu = page.getByRole('menu', { name: 'Slash menu' })
     await expect(slashMenu).toBeVisible()
+    await expect(slashMenu).toHaveAttribute('data-floating', 'true')
+    await expect(slashMenu).toHaveCSS('position', 'fixed')
     await expect(slashMenu.getByRole('menuitem', { name: /Code/ })).toBeVisible()
+    await expect
+      .poll(async () => readLocatorTop(virtualList(page)))
+      .toBeCloseTo(virtualListTopBeforeMenu, 0)
 
     await slashMenu.getByRole('menuitem', { name: /Code/ }).click()
 
@@ -89,6 +95,27 @@ test.describe('Vetra demo editor main editing path', () => {
     expect(getRootChildren(after)).toHaveLength(beforeChildren.length + 1)
     expect(insertedBlock.content).toBe('')
     await expect(page.getByLabel('Code block')).toBeVisible()
+  })
+
+  test('inserts a paragraph after a block from the gutter plus button', async ({ page }) => {
+    const anchorBlockId = 'intro-body'
+    const before = await readSerializedDocument(page)
+    const beforeChildren = getRootChildren(before)
+
+    await blockRow(page, anchorBlockId).hover()
+    await blockPlusButton(page, anchorBlockId).click()
+
+    const after = await waitForSerializedDocument(page, (serialized) => {
+      const insertedBlock = findBlockAfter(serialized, anchorBlockId)
+
+      return insertedBlock?.type === 'paragraph' && readBlockPlainText(insertedBlock) === ''
+    })
+    const insertedBlock = expectDefined(findBlockAfter(after, anchorBlockId))
+
+    expect(after.document.version).toBeGreaterThan(before.document.version)
+    expect(getRootChildren(after)).toHaveLength(beforeChildren.length + 1)
+    expect(readBlockPlainText(insertedBlock)).toBe('')
+    await expect(blockShell(page, insertedBlock.id)).toHaveAttribute('data-active', 'true')
   })
 
   test('pastes plain text into multiple blocks and updates the serialized document', async ({
@@ -205,12 +232,26 @@ function blockShell(page: Page, blockId: string): Locator {
   return page.locator(`[data-vetra-block-shell="${blockId}"]`)
 }
 
+function blockRow(page: Page, blockId: string): Locator {
+  return page.locator(`[data-vetra-block-row="${blockId}"]`)
+}
+
+function blockPlusButton(page: Page, blockId: string): Locator {
+  return page.locator(
+    `[data-vetra-block-control-block-id="${blockId}"][data-vetra-block-control="insert-after"]`,
+  )
+}
+
 function activeInlineEditor(page: Page): Locator {
   return page.locator('.vetra-inline-editor[contenteditable="true"]')
 }
 
 function editorRoot(page: Page): Locator {
   return page.locator('.vetra-editor-root')
+}
+
+function virtualList(page: Page): Locator {
+  return page.locator('.vetra-virtual-list')
 }
 
 async function activateBlock(page: Page, blockId: string): Promise<void> {
@@ -275,6 +316,16 @@ async function pastePlainText(page: Page, text: string): Promise<void> {
       }),
     )
   }, text)
+}
+
+async function readLocatorTop(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox()
+
+  if (box === null) {
+    throw new Error('Expected locator to have a bounding box.')
+  }
+
+  return box.y
 }
 
 async function waitForSerializedDocument(

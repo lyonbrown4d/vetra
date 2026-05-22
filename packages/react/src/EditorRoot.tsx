@@ -73,13 +73,18 @@ interface EditorSurfaceProps {
   readonly className?: string
 }
 
+interface SlashMenuState {
+  readonly targetBlockId: BlockId
+  readonly query: string
+  readonly anchorElement?: HTMLElement | null
+}
+
 function EditorSurface(props: EditorSurfaceProps) {
   const editor = useEditor()
   const surfaceRef = useRef<HTMLDivElement | null>(null)
-  const [slashMenuState, setSlashMenuState] = useState<{
-    readonly targetBlockId: BlockId
-    readonly query: string
-  } | null>(null)
+  const [slashMenuState, setSlashMenuState] = useState<SlashMenuState | null>(null)
+  const slashMenuAnchorElement =
+    slashMenuState === null ? null : resolveSlashMenuAnchor(surfaceRef.current, slashMenuState)
 
   const closeSlashMenu = useCallback(() => {
     setSlashMenuState(null)
@@ -192,6 +197,7 @@ function EditorSurface(props: EditorSurfaceProps) {
         if (activeBlockId !== undefined) {
           event.preventDefault()
           setSlashMenuState({
+            anchorElement: getBlockShell(surfaceRef.current, activeBlockId) ?? surfaceRef.current,
             targetBlockId: activeBlockId,
             query: '',
           })
@@ -282,6 +288,7 @@ function EditorSurface(props: EditorSurfaceProps) {
       <BlockToolbar className="vetra-block-toolbar" />
       {slashMenuState === null ? null : (
         <SlashMenu
+          anchorElement={slashMenuAnchorElement}
           className="vetra-slash-menu"
           idFactory={() => createAvailableBlockId(editor, 'slash')}
           mode="insert-after"
@@ -373,15 +380,31 @@ function isTextEditingElement(target: EventTarget): boolean {
   )
 }
 
-function focusBlockShell(root: HTMLElement | null, blockId: BlockId): void {
+function resolveSlashMenuAnchor(
+  root: HTMLElement | null,
+  state: SlashMenuState,
+): HTMLElement | null {
+  if (state.anchorElement?.isConnected === true) {
+    return state.anchorElement
+  }
+
+  return getBlockShell(root, state.targetBlockId) ?? root
+}
+
+function getBlockShell(root: HTMLElement | null, blockId: BlockId): HTMLElement | undefined {
   if (root === null) {
-    return
+    return undefined
   }
 
   for (const element of root.querySelectorAll<HTMLElement>('[data-vetra-block-shell]')) {
     if (element.dataset.vetraBlockShell === blockId) {
-      element.focus()
-      return
+      return element
     }
   }
+
+  return undefined
+}
+
+function focusBlockShell(root: HTMLElement | null, blockId: BlockId): void {
+  getBlockShell(root, blockId)?.focus()
 }

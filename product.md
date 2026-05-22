@@ -1142,6 +1142,20 @@ export interface ReactBlockPlugin<TBlock extends DocBlock = DocBlock> {
 - 页面模板；
 - 移动端优化。
 
+### 18.3 Playground Notion-like 交互基线
+
+Playground 应作为下游调用方理解 Vetra 能力的完整示例，而不是只展示静态 demo。
+
+当前 React renderer / playground 的 Notion-like 基线包括：
+
+- 编辑画布不使用 card 外框，active block 不弹出卡片化容器；
+- slash menu 使用 Floating UI 在 active block 附近浮层定位，不占据文档流；
+- 每个 block 前展示 gutter controls，包括加号插入段落和拖拽手柄；
+- block reorder 通过 dnd-kit 在 React renderer 内完成交互编排，并通过 core `moveBlock` command 修改文档顺序；
+- V1 只支持 root-level visible block reorder，nested indent / outdent 和跨层级拖拽后续迭代。
+
+这些能力属于 `@vetra/react` 和 playground 展示层，不允许反向污染 `@vetra/core`。
+
 ---
 
 ## 20. 里程碑

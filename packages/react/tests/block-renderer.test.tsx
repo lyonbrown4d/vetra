@@ -141,10 +141,65 @@ describe('BlockRenderer active lifecycle', () => {
       rendered.cleanup()
     }
   })
+
+  it('inserts an empty paragraph after the current block from the gutter plus button', () => {
+    const editorDocument = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'A'), paragraph('block-b', 'B')],
+    })
+    const editor = createEditor(createEditorState(editorDocument))
+    const rendered = renderBlockRenderer(editor, [paragraphPlugin], 'block-a')
+
+    try {
+      const insertButton = rendered.container.querySelector(
+        '[data-vetra-block-control="insert-after"]',
+      )
+      if (!(insertButton instanceof HTMLButtonElement)) {
+        throw new Error('Expected gutter insert button to render.')
+      }
+
+      expect(insertButton.getAttribute('aria-label')).toBe('Insert paragraph after block')
+
+      act(() => {
+        insertButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+
+      const state = editor.getState()
+      const rootChildren = state.document.children.root ?? []
+      const insertedBlockId = rootChildren[1]
+
+      expect(rootChildren).toHaveLength(3)
+      expect(rootChildren[0]).toBe('block-a')
+      expect(rootChildren[2]).toBe('block-b')
+      expect(insertedBlockId).toBeDefined()
+      expect(state.document.blocks[expectDefined(insertedBlockId)]).toMatchObject({
+        id: insertedBlockId,
+        type: 'paragraph',
+        content: {
+          type: 'inline-content',
+          version: 1,
+          children: [],
+        },
+      })
+      expect(state.selection).toEqual({ type: 'block', blockId: insertedBlockId })
+    } finally {
+      rendered.cleanup()
+    }
+  })
 })
 
 function readParagraphText(block: ParagraphBlock): string {
   const firstNode = block.content.children[0]
 
   return firstNode?.type === 'text' ? firstNode.text : ''
+}
+
+function expectDefined<TValue>(value: TValue | undefined): TValue {
+  expect(value).toBeDefined()
+
+  if (value === undefined) {
+    throw new Error('Expected value to be defined.')
+  }
+
+  return value
 }
