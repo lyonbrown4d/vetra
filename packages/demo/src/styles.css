@@ -539,6 +539,17 @@ textarea:focus-visible,
   background: #f8fafc;
 }
 
+.vetra-block-shell[data-selected='true'] .vetra-block {
+  background: #eff6ff;
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.vetra-block-shell[data-selected='true']:focus-visible .vetra-block {
+  box-shadow:
+    inset 3px 0 0 var(--primary),
+    0 0 0 3px var(--ring);
+}
+
 .vetra-block--heading h1,
 .vetra-block--heading h2,
 .vetra-block--heading h3,

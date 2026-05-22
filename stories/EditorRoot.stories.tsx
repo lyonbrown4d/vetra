@@ -96,6 +96,23 @@ const selectedBlockSelection: DocumentSelection = {
   blockId: 'selected-target',
 }
 
+const rangeSelectedDocument = createDocument({
+  id: 'storybook-range-selected',
+  blocks: [
+    createHeadingBlock('range-title', 2, 'Range selection state'),
+    createParagraphBlock('range-anchor', 'The range starts on this block.'),
+    createParagraphBlock('range-middle', 'This middle block should render as range selected.'),
+    createQuoteBlock('range-focus', 'The range ends on this block.'),
+    createParagraphBlock('range-after', 'This block should stay outside the selected range.'),
+  ],
+})
+
+const rangeBlockSelection: DocumentSelection = {
+  type: 'range-block',
+  anchorBlockId: 'range-anchor',
+  focusBlockId: 'range-focus',
+}
+
 const longContentDocument = createDocument({
   id: 'storybook-long-content',
   blocks: [
@@ -147,6 +164,12 @@ const virtualizedDocument = createDocument({
   ],
 })
 
+const selectAllLargeVirtualizedSelection: DocumentSelection = {
+  type: 'range-block',
+  anchorBlockId: 'virtualized-title',
+  focusBlockId: 'virtual-block-1200',
+}
+
 export const Default: Story = {
   args: {
     blocks: basicBlocks,
@@ -178,6 +201,21 @@ export const Selected: Story = {
   ),
 }
 
+export const RangeSelected: Story = {
+  args: {
+    blocks: basicBlocks,
+    className: editorClassName,
+    initialValue: rangeSelectedDocument,
+  },
+  render: () => (
+    <StoryEditorHarness
+      className={editorClassName}
+      initialSelection={rangeBlockSelection}
+      initialValue={rangeSelectedDocument}
+    />
+  ),
+}
+
 export const LongContent: Story = {
   args: {
     blocks: basicBlocks,
@@ -201,6 +239,22 @@ export const BenchmarkishVirtualized: Story = {
     initialValue: virtualizedDocument,
   },
   name: 'Benchmark-ish / Virtualized',
+}
+
+export const SelectAllLargeVirtualized: Story = {
+  args: {
+    blocks: basicBlocks,
+    className: editorClassName,
+    initialValue: virtualizedDocument,
+  },
+  name: 'Select all / Large virtualized',
+  render: () => (
+    <StoryEditorHarness
+      className={editorClassName}
+      initialSelection={selectAllLargeVirtualizedSelection}
+      initialValue={virtualizedDocument}
+    />
+  ),
 }
 
 interface StoryEditorHarnessProps {

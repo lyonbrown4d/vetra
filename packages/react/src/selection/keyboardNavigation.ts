@@ -1,14 +1,15 @@
 import {
-  findParentId,
-  getAdjacentBlockSelection,
   getAdjacentSiblingBlockId,
   getBlockChildren,
+  getSelectedBlockIds,
   getSelectionFocusBlockId,
+  getSiblingRangeBlockIds,
   isBlockSelection,
   isRangeBlockSelection,
   normalizeSelection,
   type BlockId,
   type BlockSelectionNavigationDirection,
+  type DocumentSelection,
   type EditorRuntime,
 } from '@vetra/core'
 
@@ -23,18 +24,68 @@ export function moveBlockSelection(
 ): BlockId | undefined {
   const state = editor.getState()
   const selection = normalizeSelection(state.document, state.selection)
-  const nextSelection = getAdjacentBlockSelection(state.document, selection, direction)
 
-  if (nextSelection === undefined) {
+  if (isRangeBlockSelection(selection)) {
+    return setBlockSelection(editor, selection.focusBlockId)
+  }
+
+  if (!isBlockSelection(selection)) {
     return undefined
   }
 
-  const result = editor.dispatch({
-    type: 'setSelection',
-    selection: nextSelection,
-  })
+  const blockId = getAdjacentSiblingBlockId(state.document, selection.blockId, direction)
 
-  return result.ok ? nextSelection.blockId : undefined
+  return blockId === undefined ? undefined : setBlockSelection(editor, blockId)
+}
+
+export function extendBlockSelection(
+  editor: EditorRuntime,
+  direction: BlockSelectionNavigationDirection,
+): BlockId | undefined {
+  const state = editor.getState()
+  const selection = normalizeSelection(state.document, state.selection)
+  const focusBlockId = getSelectionFocusBlockId(selection)
+
+  if (focusBlockId === undefined) {
+    return undefined
+  }
+
+  const nextFocusBlockId = getAdjacentSiblingBlockId(state.document, focusBlockId, direction)
+  if (nextFocusBlockId === undefined) {
+    return undefined
+  }
+
+  const anchorBlockId = getSelectionAnchorBlockId(selection) ?? focusBlockId
+  if (
+    anchorBlockId !== nextFocusBlockId &&
+    getSiblingRangeBlockIds(state.document, anchorBlockId, nextFocusBlockId).length === 0
+  ) {
+    return undefined
+  }
+
+  return setRangeOrBlockSelection(editor, anchorBlockId, nextFocusBlockId)
+}
+
+export function extendBlockSelectionToBlock(
+  editor: EditorRuntime,
+  blockId: BlockId,
+): BlockId | undefined {
+  const state = editor.getState()
+  const selection = normalizeSelection(state.document, state.selection)
+  const anchorBlockId = getSelectionAnchorBlockId(selection)
+
+  if (anchorBlockId === undefined) {
+    return setBlockSelection(editor, blockId)
+  }
+
+  if (
+    anchorBlockId !== blockId &&
+    getSiblingRangeBlockIds(state.document, anchorBlockId, blockId).length === 0
+  ) {
+    return undefined
+  }
+
+  return setRangeOrBlockSelection(editor, anchorBlockId, blockId)
 }
 
 export function collapseSelectionToBlock(editor: EditorRuntime): BlockId | undefined {
@@ -50,12 +101,7 @@ export function collapseSelectionToBlock(editor: EditorRuntime): BlockId | undef
     return blockId
   }
 
-  const result = editor.dispatch({
-    type: 'setSelection',
-    selection: { type: 'block', blockId },
-  })
-
-  return result.ok ? blockId : undefined
+  return setBlockSelection(editor, blockId)
 }
 
 export function selectAllTopLevelBlocks(editor: EditorRuntime): BlockId | undefined {
@@ -115,15 +161,12 @@ export function deleteSelectedBlocks(editor: EditorRuntime): DeleteSelectedBlock
     getAdjacentSiblingBlockId(state.document, lastSelectedBlockId, 'next') ??
     getAdjacentSiblingBlockId(state.document, firstSelectedBlockId, 'previous')
 
-  for (const blockId of selectedBlockIds) {
-    const deleteResult = editor.dispatch({
-      type: 'deleteBlock',
-      blockId,
-    })
-
-    if (!deleteResult.ok) {
-      return undefined
-    }
+  const deleteResult = editor.dispatch({
+    type: 'deleteBlocks',
+    blockIds: selectedBlockIds,
+  })
+  if (!deleteResult.ok) {
+    return undefined
   }
 
   if (nextBlockId === undefined || editor.getState().document.blocks[nextBlockId] === undefined) {
@@ -168,29 +211,43 @@ function getSelectedSiblingBlockIds(editor: EditorRuntime): readonly BlockId[] {
   const state = editor.getState()
   const selection = normalizeSelection(state.document, state.selection)
 
-  if (isBlockSelection(selection)) {
-    return [selection.blockId]
+  return getSelectedBlockIds(state.document, selection)
+}
+
+function getSelectionAnchorBlockId(selection: DocumentSelection): BlockId | undefined {
+  switch (selection.type) {
+    case 'none':
+      return undefined
+    case 'block':
+    case 'text':
+      return selection.blockId
+    case 'range-block':
+      return selection.anchorBlockId
   }
+}
 
-  if (!isRangeBlockSelection(selection)) {
-    return []
-  }
+function setBlockSelection(editor: EditorRuntime, blockId: BlockId): BlockId | undefined {
+  const result = editor.dispatch({
+    type: 'setSelection',
+    selection: { type: 'block', blockId },
+  })
 
-  const anchorParentId = findParentId(state.document, selection.anchorBlockId)
-  const focusParentId = findParentId(state.document, selection.focusBlockId)
-  if (anchorParentId === undefined || anchorParentId !== focusParentId) {
-    return []
-  }
+  return result.ok ? blockId : undefined
+}
 
-  const siblings = getBlockChildren(state.document, anchorParentId)
-  const anchorIndex = siblings.indexOf(selection.anchorBlockId)
-  const focusIndex = siblings.indexOf(selection.focusBlockId)
-  if (anchorIndex === -1 || focusIndex === -1) {
-    return []
-  }
+function setRangeOrBlockSelection(
+  editor: EditorRuntime,
+  anchorBlockId: BlockId,
+  focusBlockId: BlockId,
+): BlockId | undefined {
+  const selection: DocumentSelection =
+    anchorBlockId === focusBlockId
+      ? { type: 'block', blockId: focusBlockId }
+      : { type: 'range-block', anchorBlockId, focusBlockId }
+  const result = editor.dispatch({
+    type: 'setSelection',
+    selection,
+  })
 
-  const fromIndex = Math.min(anchorIndex, focusIndex)
-  const toIndex = Math.max(anchorIndex, focusIndex)
-
-  return siblings.slice(fromIndex, toIndex + 1)
+  return result.ok ? focusBlockId : undefined
 }

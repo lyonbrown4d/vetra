@@ -8,6 +8,7 @@ import {
   createEditorState,
   createTextInlineContent,
   type DocBlock,
+  type DocumentSelection,
   type EditorRuntime,
   type ParagraphBlock,
 } from '@vetra/core'
@@ -32,6 +33,13 @@ interface HookSnapshot {
   readonly visibleBlocks: readonly DocBlock[]
 }
 
+interface RangeHookSnapshot {
+  readonly blockA: BlockSelectionState
+  readonly blockB: BlockSelectionState
+  readonly blockC: BlockSelectionState
+  readonly blockD: BlockSelectionState
+}
+
 function paragraph(id: string, text: string): ParagraphBlock {
   return {
     id,
@@ -50,6 +58,39 @@ function renderProbe(editor: EditorRuntime, onSnapshot: (snapshot: HookSnapshot)
       blockSelection: useBlockSelection('block-a'),
       activeBlock: useActiveBlock(),
       visibleBlocks: useVisibleBlocks({ blockIds: ['block-b', 'missing', 'block-a'] }),
+    })
+
+    return null
+  }
+
+  act(() => {
+    root.render(
+      <EditorProvider blocks={[]} editor={editor}>
+        <Probe />
+      </EditorProvider>,
+    )
+  })
+
+  return () => {
+    unmountRoot(root)
+    container.remove()
+  }
+}
+
+function renderRangeProbe(
+  editor: EditorRuntime,
+  onSnapshot: (snapshot: RangeHookSnapshot) => void,
+) {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+
+  function Probe() {
+    onSnapshot({
+      blockA: useBlockSelection('block-a'),
+      blockB: useBlockSelection('block-b'),
+      blockC: useBlockSelection('block-c'),
+      blockD: useBlockSelection('block-d'),
     })
 
     return null
@@ -110,6 +151,60 @@ describe('selection hooks', () => {
       })
       expect(snapshot?.activeBlock.blockId).toBe('block-a')
       expect(snapshot?.activeBlock.block?.id).toBe('block-a')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('projects contiguous range block membership in hook output', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [
+        paragraph('block-a', 'A'),
+        paragraph('block-b', 'B'),
+        paragraph('block-c', 'C'),
+        paragraph('block-d', 'D'),
+      ],
+    })
+    const editor = createEditor(createEditorState(document))
+    const rangeSelection = {
+      type: 'range-block',
+      anchorBlockId: 'block-a',
+      focusBlockId: 'block-c',
+    } satisfies DocumentSelection
+    let snapshot: RangeHookSnapshot | undefined
+    const cleanup = renderRangeProbe(editor, (nextSnapshot) => {
+      snapshot = nextSnapshot
+    })
+
+    try {
+      act(() => {
+        editor.dispatch({
+          type: 'setSelection',
+          selection: rangeSelection,
+        })
+      })
+
+      expect(snapshot?.blockA).toMatchObject({
+        active: true,
+        selected: true,
+        selection: rangeSelection,
+      })
+      expect(snapshot?.blockB).toMatchObject({
+        active: true,
+        selected: true,
+        selection: rangeSelection,
+      })
+      expect(snapshot?.blockC).toMatchObject({
+        active: true,
+        selected: true,
+        selection: rangeSelection,
+      })
+      expect(snapshot?.blockD).toMatchObject({
+        active: false,
+        selected: false,
+        selection: rangeSelection,
+      })
     } finally {
       cleanup()
     }

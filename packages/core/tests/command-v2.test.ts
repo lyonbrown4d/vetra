@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createEditor,
   createDocument,
   createEditorState,
   createTextInlineContent,
@@ -34,6 +35,32 @@ function nestedDocument(): DocumentState {
       parent: ['child'],
       child: [],
       sibling: [],
+    },
+  }
+}
+
+function batchDeleteDocument(): DocumentState {
+  return {
+    id: 'doc',
+    version: 1,
+    rootId: 'root',
+    blocks: {
+      root: { id: 'root', type: 'root' },
+      'block-a': paragraph('block-a', 'A'),
+      'block-b': paragraph('block-b', 'B'),
+      'block-c': paragraph('block-c', 'C'),
+      'block-d': paragraph('block-d', 'D'),
+      'child-a': paragraph('child-a', 'Child A'),
+      'child-b': paragraph('child-b', 'Child B'),
+    },
+    children: {
+      root: ['block-a', 'block-b', 'block-c', 'block-d'],
+      'block-a': [],
+      'block-b': ['child-a', 'child-b'],
+      'block-c': [],
+      'block-d': [],
+      'child-a': [],
+      'child-b': [],
     },
   }
 }
@@ -119,6 +146,123 @@ describe('core command dispatch v2 insert commands', () => {
       ok: false,
       error: { code: 'invalidIndex' },
     })
+  })
+})
+
+describe('core command dispatch v2 deleteBlocks', () => {
+  it('deletes duplicate ids and descendant requests while preserving tree consistency', () => {
+    const selected = expectTransaction(
+      dispatchCommand(createEditorState(batchDeleteDocument()), {
+        type: 'setSelection',
+        selection: {
+          type: 'range-block',
+          anchorBlockId: 'block-a',
+          focusBlockId: 'block-d',
+        },
+      }),
+    )
+    const transaction = expectTransaction(
+      dispatchCommand(selected.after, {
+        type: 'deleteBlocks',
+        blockIds: ['block-b', 'block-c', 'block-b', 'child-a'],
+      }),
+    )
+
+    expect(transaction.after.document.children.root).toEqual(['block-a', 'block-d'])
+    expect(transaction.after.document.blocks['block-b']).toBeUndefined()
+    expect(transaction.after.document.blocks['block-c']).toBeUndefined()
+    expect(transaction.after.document.blocks['child-a']).toBeUndefined()
+    expect(transaction.after.document.blocks['child-b']).toBeUndefined()
+    expect(transaction.after.document.children['block-b']).toBeUndefined()
+    expect(transaction.after.document.children['child-a']).toBeUndefined()
+    expect(transaction.after.selection).toEqual({ type: 'none' })
+    expect(new Set(transaction.changedBlockIds)).toEqual(
+      new Set(['root', 'block-b', 'block-c', 'child-a', 'child-b']),
+    )
+    expect(transaction.changedBlockIds).toHaveLength(new Set(transaction.changedBlockIds).size)
+    expectValidDocument(transaction.after.document)
+  })
+
+  it('records deleteBlocks undo and redo as one history step', () => {
+    const editor = createEditor(
+      createEditorState(
+        createDocument({
+          id: 'doc',
+          blocks: [paragraph('block-a', 'A'), paragraph('block-b', 'B'), paragraph('block-c', 'C')],
+        }),
+      ),
+    )
+
+    const deleted = editor.dispatch({
+      type: 'deleteBlocks',
+      blockIds: ['block-b', 'block-c'],
+    })
+
+    expect(deleted.ok).toBe(true)
+    expect(editor.getState().document.children.root).toEqual(['block-a'])
+    expect(editor.canUndo()).toBe(true)
+
+    const undone = editor.undo()
+
+    expect(undone.ok).toBe(true)
+    expect(editor.getState().document.children.root).toEqual(['block-a', 'block-b', 'block-c'])
+    expect(editor.canRedo()).toBe(true)
+
+    const redone = editor.redo()
+
+    expect(redone.ok).toBe(true)
+    expect(editor.getState().document.children.root).toEqual(['block-a'])
+  })
+
+  it('rejects root, missing, and detached block ids without partial deletion', () => {
+    const state = createEditorState(
+      createDocument({ id: 'doc', blocks: [paragraph('block-a', 'A')] }),
+    )
+
+    expect(
+      dispatchCommand(state, {
+        type: 'deleteBlocks',
+        blockIds: ['block-a', 'root'],
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'cannotDeleteRoot' },
+    })
+    expect(
+      dispatchCommand(state, {
+        type: 'deleteBlocks',
+        blockIds: ['block-a', 'missing'],
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'blockNotFound' },
+    })
+    expect(state.document.children.root).toEqual(['block-a'])
+
+    const detachedState = createEditorState({
+      id: 'doc',
+      version: 1,
+      rootId: 'root',
+      blocks: {
+        root: { id: 'root', type: 'root' },
+        detached: paragraph('detached', 'Detached'),
+      },
+      children: {
+        root: [],
+        detached: [],
+      },
+    })
+
+    expect(
+      dispatchCommand(detachedState, {
+        type: 'deleteBlocks',
+        blockIds: ['detached'],
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'invalidParent' },
+    })
+    expect(detachedState.document.blocks.detached).toBeDefined()
   })
 })
 

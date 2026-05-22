@@ -1,7 +1,7 @@
 import {
-  isBlockSelection,
+  isBlockSelected,
+  isTextSelection,
   normalizeSelection,
-  selectionTouchesBlock,
   type BlockId,
   type DocumentSelection,
 } from '@vetra/core'
@@ -17,11 +17,12 @@ export interface BlockSelectionState {
 export function useBlockSelection(blockId: BlockId): BlockSelectionState {
   return useEditorSelector((state) => {
     const selection = normalizeSelection(state.document, state.selection)
+    const selected = isBlockSelected(state.document, selection, blockId)
 
     return {
       selection,
-      active: selectionTouchesBlock(selection, blockId),
-      selected: isBlockSelection(selection) && selection.blockId === blockId,
+      active: selected || (isTextSelection(selection) && selection.blockId === blockId),
+      selected,
     }
   }, areBlockSelectionStatesEqual)
 }

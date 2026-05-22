@@ -2,6 +2,10 @@ import { err, ok, type Result } from '@vetra/core/result'
 import type { Transaction } from '@vetra/core/transaction/types'
 import { noneSelection } from '@vetra/core/selection/types'
 import type { DocumentSelection } from '@vetra/core/selection/types'
+import {
+  getSelectedBlockIds,
+  getSelectionReferencedBlockIds,
+} from '@vetra/core/selection/helpers'
 import type { BlockId, DocBlock, DocumentState } from '@vetra/core/document/types'
 import {
   collectSubtreeIds,
@@ -14,6 +18,7 @@ import type { CommandError } from '@vetra/core/command/errors'
 import type {
   ConvertBlockTypeCommand,
   DeleteBlockCommand,
+  DeleteBlocksCommand,
   DuplicateBlockCommand,
   EditorCommand,
   InsertBlockAfterCommand,
@@ -29,6 +34,12 @@ import type {
 interface CommandStateChange {
   readonly state: EditorState
   readonly changedBlockIds: readonly BlockId[]
+}
+
+interface PreparedBlockDeletion {
+  readonly affectedParentIds: readonly BlockId[]
+  readonly removedIds: readonly BlockId[]
+  readonly removedIdSet: ReadonlySet<BlockId>
 }
 
 export function createEditorState(document: DocumentState): EditorState {
@@ -69,6 +80,8 @@ function applyCommand(
       return insertBlockAfter(state, command)
     case 'deleteBlock':
       return deleteBlock(state, command)
+    case 'deleteBlocks':
+      return deleteBlocks(state, command)
     case 'updateBlock':
       return updateBlock(state, command)
     case 'moveBlock':
@@ -278,42 +291,45 @@ function deleteBlock(
   state: EditorState,
   command: DeleteBlockCommand,
 ): Result<CommandStateChange, CommandError> {
+  return deleteBlockIds(state, [command.blockId])
+}
+
+function deleteBlocks(
+  state: EditorState,
+  command: DeleteBlocksCommand,
+): Result<CommandStateChange, CommandError> {
+  return deleteBlockIds(state, command.blockIds)
+}
+
+function deleteBlockIds(
+  state: EditorState,
+  blockIds: readonly BlockId[],
+): Result<CommandStateChange, CommandError> {
   const document = state.document
+  const preparedDeletion = prepareBlockDeletion(document, blockIds)
+  if (!preparedDeletion.ok) {
+    return preparedDeletion
+  }
 
-  if (command.blockId === document.rootId) {
-    return err({
-      code: 'cannotDeleteRoot',
-      message: 'The root block cannot be deleted.',
+  const { affectedParentIds, removedIds, removedIdSet } = preparedDeletion.value
+  if (removedIds.length === 0) {
+    return ok({
+      state,
+      changedBlockIds: [],
     })
   }
 
-  if (document.blocks[command.blockId] === undefined) {
-    return err({
-      code: 'blockNotFound',
-      message: `Block "${command.blockId}" does not exist.`,
-    })
-  }
-
-  const parentId = findParentId(document, command.blockId)
-  if (parentId === undefined) {
-    return err({
-      code: 'invalidParent',
-      message: `Block "${command.blockId}" is not attached to the document tree.`,
-    })
-  }
-
-  const removedIds = collectSubtreeIds(document, command.blockId)
-  const removedIdSet = new Set(removedIds)
   const blocks = Object.fromEntries(
     Object.entries(document.blocks).filter(([blockId]) => !removedIdSet.has(blockId)),
   ) as Record<BlockId, DocBlock>
   const children = Object.fromEntries(
-    Object.entries(document.children).filter(([blockId]) => !removedIdSet.has(blockId)),
+    Object.entries(document.children)
+      .filter(([blockId]) => !removedIdSet.has(blockId))
+      .map(([blockId, childIds]) => [
+        blockId,
+        childIds.filter((childId) => !removedIdSet.has(childId)),
+      ]),
   ) as Record<BlockId, readonly BlockId[]>
-
-  children[parentId] = getBlockChildren(document, parentId).filter(
-    (childId) => childId !== command.blockId,
-  )
 
   return ok({
     state: {
@@ -324,12 +340,115 @@ function deleteBlock(
         children,
         version: document.version + 1,
       },
-      selection: selectionTouchesAny(state.selection, removedIdSet)
+      selection: selectionTouchesAny(document, state.selection, removedIdSet)
         ? noneSelection
         : state.selection,
     },
-    changedBlockIds: [parentId, ...removedIds],
+    changedBlockIds: [...affectedParentIds, ...removedIds],
   })
+}
+
+function prepareBlockDeletion(
+  document: DocumentState,
+  blockIds: readonly BlockId[],
+): Result<PreparedBlockDeletion, CommandError> {
+  const requestedBlockIds = dedupeBlockIds(blockIds)
+  const requestedBlockIdSet = new Set(requestedBlockIds)
+
+  for (const blockId of requestedBlockIds) {
+    if (blockId === document.rootId) {
+      return err({
+        code: 'cannotDeleteRoot',
+        message: 'The root block cannot be deleted.',
+      })
+    }
+
+    if (document.blocks[blockId] === undefined) {
+      return err({
+        code: 'blockNotFound',
+        message: `Block "${blockId}" does not exist.`,
+      })
+    }
+
+    const parentId = findParentId(document, blockId)
+    if (
+      parentId === undefined ||
+      document.blocks[parentId] === undefined ||
+      document.children[parentId] === undefined
+    ) {
+      return err({
+        code: 'invalidParent',
+        message: `Block "${blockId}" is not attached to the document tree.`,
+      })
+    }
+  }
+
+  const deletionRootIds = requestedBlockIds.filter(
+    (blockId) => !hasRequestedAncestor(document, blockId, requestedBlockIdSet),
+  )
+  const removedIds: BlockId[] = []
+  const removedIdSet = new Set<BlockId>()
+
+  for (const deletionRootId of deletionRootIds) {
+    for (const removedId of collectSubtreeIds(document, deletionRootId)) {
+      if (!removedIdSet.has(removedId)) {
+        removedIdSet.add(removedId)
+        removedIds.push(removedId)
+      }
+    }
+  }
+
+  const affectedParentIds: BlockId[] = []
+  const affectedParentIdSet = new Set<BlockId>()
+  for (const deletionRootId of deletionRootIds) {
+    const parentId = findParentId(document, deletionRootId)
+    if (
+      parentId !== undefined &&
+      !removedIdSet.has(parentId) &&
+      !affectedParentIdSet.has(parentId)
+    ) {
+      affectedParentIdSet.add(parentId)
+      affectedParentIds.push(parentId)
+    }
+  }
+
+  return ok({
+    affectedParentIds,
+    removedIds,
+    removedIdSet,
+  })
+}
+
+function dedupeBlockIds(blockIds: readonly BlockId[]): readonly BlockId[] {
+  const uniqueBlockIds: BlockId[] = []
+  const seenBlockIds = new Set<BlockId>()
+
+  for (const blockId of blockIds) {
+    if (!seenBlockIds.has(blockId)) {
+      seenBlockIds.add(blockId)
+      uniqueBlockIds.push(blockId)
+    }
+  }
+
+  return uniqueBlockIds
+}
+
+function hasRequestedAncestor(
+  document: DocumentState,
+  blockId: BlockId,
+  requestedBlockIds: ReadonlySet<BlockId>,
+): boolean {
+  let parentId = findParentId(document, blockId)
+
+  while (parentId !== undefined) {
+    if (requestedBlockIds.has(parentId)) {
+      return true
+    }
+
+    parentId = findParentId(document, parentId)
+  }
+
+  return false
 }
 
 function updateBlock(
@@ -956,7 +1075,11 @@ function mergeBlock(
         children,
         version: document.version + 1,
       },
-      selection: selectionTouchesAny(state.selection, new Set([command.sourceBlockId]))
+      selection: selectionTouchesAny(
+        document,
+        state.selection,
+        new Set([command.sourceBlockId]),
+      )
         ? noneSelection
         : state.selection,
     },
@@ -1007,16 +1130,21 @@ function findMissingSelectionBlockId(
 }
 
 function selectionTouchesAny(
+  document: DocumentState,
   selection: DocumentSelection,
   blockIds: ReadonlySet<BlockId>,
 ): boolean {
-  switch (selection.type) {
-    case 'none':
-      return false
-    case 'block':
-    case 'text':
-      return blockIds.has(selection.blockId)
-    case 'range-block':
-      return blockIds.has(selection.anchorBlockId) || blockIds.has(selection.focusBlockId)
+  for (const blockId of getSelectionReferencedBlockIds(selection)) {
+    if (blockIds.has(blockId)) {
+      return true
+    }
   }
+
+  for (const blockId of getSelectedBlockIds(document, selection)) {
+    if (blockIds.has(blockId)) {
+      return true
+    }
+  }
+
+  return false
 }

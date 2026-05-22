@@ -192,9 +192,7 @@ test.describe('Vetra demo editor main editing path', () => {
     )
   })
 
-  test('selects all top-level blocks from active rich text and deletes the range', async ({
-    page,
-  }) => {
+  test('selects all top-level blocks, highlights the range, and deletes it', async ({ page }) => {
     const blockId = 'intro-body'
     const before = await readSerializedDocument(page)
 
@@ -203,6 +201,12 @@ test.describe('Vetra demo editor main editing path', () => {
     await activateBlock(page, blockId)
     await expect(activeInlineEditor(page)).toBeFocused()
     await activeInlineEditor(page).press('ControlOrMeta+A')
+
+    for (const selectedBlockId of ['intro-title', 'intro-body', 'design-quote', 'sample-code']) {
+      await expect(blockShell(page, selectedBlockId)).toHaveAttribute('data-selected', 'true')
+    }
+    await expect(activeInlineEditor(page)).toHaveCount(0)
+
     await page.keyboard.press('Delete')
 
     const after = await waitForSerializedDocument(page, (serialized) => {
@@ -211,6 +215,14 @@ test.describe('Vetra demo editor main editing path', () => {
 
     expect(after.document.version).toBeGreaterThan(before.document.version)
     expect(getRootChildren(after)).toEqual([])
+
+    await page.keyboard.press('ControlOrMeta+Z')
+
+    const afterUndo = await waitForSerializedDocument(page, (serialized) => {
+      return getRootChildren(serialized).length === getRootChildren(before).length
+    })
+
+    expect(getRootChildren(afterUndo)).toEqual(getRootChildren(before))
   })
 
   test('keeps far virtualized blocks out of the initial DOM', async ({ page }) => {

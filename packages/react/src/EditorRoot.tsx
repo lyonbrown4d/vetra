@@ -23,6 +23,7 @@ import { pasteIntoEditor } from '@vetra/react/paste'
 import {
   collapseSelectionToBlock,
   deleteSelectedBlocks,
+  extendBlockSelection,
   moveBlockSelection,
   redoEditorHistory,
   selectAllTopLevelBlocks,
@@ -210,6 +211,28 @@ function EditorSurface(props: EditorSurfaceProps) {
         return
       }
 
+      if (event.shiftKey && !hasNonShiftKeyboardNavigationModifier(event)) {
+        if (event.key === 'ArrowUp') {
+          const blockId = extendBlockSelection(editor, 'previous')
+          if (blockId !== undefined) {
+            event.preventDefault()
+            focusBlockShell(surfaceRef.current, blockId)
+          }
+
+          return
+        }
+
+        if (event.key === 'ArrowDown') {
+          const blockId = extendBlockSelection(editor, 'next')
+          if (blockId !== undefined) {
+            event.preventDefault()
+            focusBlockShell(surfaceRef.current, blockId)
+          }
+
+          return
+        }
+      }
+
       if (!hasKeyboardNavigationModifier(event)) {
         if (event.key === 'ArrowUp') {
           const blockId = moveBlockSelection(editor, 'previous')
@@ -336,7 +359,11 @@ function isTextInputElement(target: EventTarget): boolean {
 }
 
 function hasKeyboardNavigationModifier(event: KeyboardEvent<HTMLElement>): boolean {
-  return event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+  return hasNonShiftKeyboardNavigationModifier(event) || event.shiftKey
+}
+
+function hasNonShiftKeyboardNavigationModifier(event: KeyboardEvent<HTMLElement>): boolean {
+  return event.altKey || event.ctrlKey || event.metaKey
 }
 
 function hasSlashMenuModifier(event: KeyboardEvent<HTMLElement>): boolean {

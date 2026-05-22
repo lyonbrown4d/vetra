@@ -43,6 +43,57 @@ export function getSelectionReferencedBlockIds(selection: DocumentSelection): re
   }
 }
 
+export function getSiblingRangeBlockIds(
+  document: DocumentState,
+  anchorBlockId: BlockId,
+  focusBlockId: BlockId,
+): readonly BlockId[] {
+  if (document.blocks[anchorBlockId] === undefined || document.blocks[focusBlockId] === undefined) {
+    return []
+  }
+
+  const anchorParentId = findParentId(document, anchorBlockId)
+  const focusParentId = findParentId(document, focusBlockId)
+  if (anchorParentId === undefined || anchorParentId !== focusParentId) {
+    return []
+  }
+
+  const siblings = getBlockChildren(document, anchorParentId)
+  const anchorIndex = siblings.indexOf(anchorBlockId)
+  const focusIndex = siblings.indexOf(focusBlockId)
+  if (anchorIndex === -1 || focusIndex === -1) {
+    return []
+  }
+
+  const startIndex = Math.min(anchorIndex, focusIndex)
+  const endIndex = Math.max(anchorIndex, focusIndex)
+
+  return siblings.slice(startIndex, endIndex + 1)
+}
+
+export function getSelectedBlockIds(
+  document: DocumentState,
+  selection: DocumentSelection,
+): readonly BlockId[] {
+  switch (selection.type) {
+    case 'none':
+    case 'text':
+      return []
+    case 'block':
+      return document.blocks[selection.blockId] === undefined ? [] : [selection.blockId]
+    case 'range-block':
+      return getSiblingRangeBlockIds(document, selection.anchorBlockId, selection.focusBlockId)
+  }
+}
+
+export function isBlockSelected(
+  document: DocumentState,
+  selection: DocumentSelection,
+  blockId: BlockId,
+): boolean {
+  return getSelectedBlockIds(document, selection).includes(blockId)
+}
+
 export function selectionTouchesBlock(selection: DocumentSelection, blockId: BlockId): boolean {
   return getSelectionReferencedBlockIds(selection).includes(blockId)
 }

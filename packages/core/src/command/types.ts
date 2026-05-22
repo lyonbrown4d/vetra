@@ -6,6 +6,7 @@ export type EditorCommand =
   | InsertBlockBeforeCommand
   | InsertBlockAfterCommand
   | DeleteBlockCommand
+  | DeleteBlocksCommand
   | UpdateBlockCommand
   | MoveBlockCommand
   | DuplicateBlockCommand
@@ -38,6 +39,11 @@ export interface InsertBlockAfterCommand {
 export interface DeleteBlockCommand {
   readonly type: 'deleteBlock'
   readonly blockId: BlockId
+}
+
+export interface DeleteBlocksCommand {
+  readonly type: 'deleteBlocks'
+  readonly blockIds: readonly BlockId[]
 }
 
 export interface UpdateBlockCommand {

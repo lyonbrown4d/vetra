@@ -6,8 +6,11 @@ import {
   dispatchCommand,
   getAdjacentBlockSelection,
   getAdjacentSiblingBlockId,
+  getSelectedBlockIds,
   getSelectionFocusBlockId,
   getSelectionReferencedBlockIds,
+  getSiblingRangeBlockIds,
+  isBlockSelected,
   isBlockSelection,
   isNoneSelection,
   isRangeBlockSelection,
@@ -86,6 +89,56 @@ describe('selection helpers', () => {
     expect(selectionTouchesBlock(selection, 'block-a')).toBe(true)
     expect(selectionTouchesBlock(selection, 'block-b')).toBe(true)
     expect(selectionTouchesBlock(selection, 'block-c')).toBe(false)
+  })
+
+  it('returns selected block ids for a single block selection', () => {
+    const document = nestedDocument()
+    const selection: DocumentSelection = { type: 'block', blockId: 'block-b' }
+
+    expect(getSelectedBlockIds(document, selection)).toEqual(['block-b'])
+    expect(isBlockSelected(document, selection, 'block-b')).toBe(true)
+    expect(isBlockSelected(document, selection, 'block-a')).toBe(false)
+    expect(
+      getSelectedBlockIds(document, {
+        type: 'text',
+        blockId: 'block-b',
+        anchor: { path: [], offset: 0 },
+        focus: { path: [], offset: 1 },
+      }),
+    ).toEqual([])
+    expect(getSelectedBlockIds(document, { type: 'block', blockId: 'missing' })).toEqual([])
+  })
+
+  it('expands range block selections over sibling block ids in document order', () => {
+    const document = nestedDocument()
+    const selection: DocumentSelection = {
+      type: 'range-block',
+      anchorBlockId: 'block-c',
+      focusBlockId: 'block-a',
+    }
+
+    expect(getSiblingRangeBlockIds(document, 'block-a', 'block-c')).toEqual([
+      'block-a',
+      'block-b',
+      'block-c',
+    ])
+    expect(getSelectedBlockIds(document, selection)).toEqual(['block-a', 'block-b', 'block-c'])
+    expect(isBlockSelected(document, selection, 'block-b')).toBe(true)
+    expect(isBlockSelected(document, selection, 'child-a')).toBe(false)
+  })
+
+  it('returns an empty selection range for mixed-parent range block selections', () => {
+    const document = nestedDocument()
+    const selection: DocumentSelection = {
+      type: 'range-block',
+      anchorBlockId: 'block-a',
+      focusBlockId: 'child-a',
+    }
+
+    expect(getSiblingRangeBlockIds(document, 'block-a', 'child-a')).toEqual([])
+    expect(getSelectedBlockIds(document, selection)).toEqual([])
+    expect(isBlockSelected(document, selection, 'block-a')).toBe(false)
+    expect(getSiblingRangeBlockIds(document, 'block-a', 'missing')).toEqual([])
   })
 
   it('returns the focus block id without exposing browser selection state', () => {

@@ -6,6 +6,7 @@ import { useBlockRegistry } from '@vetra/react/EditorProvider'
 import { useActiveBlockLifecycle } from '@vetra/react/hooks/useActiveBlockLifecycle'
 import { useBlock } from '@vetra/react/hooks/useBlock'
 import { useMountedBlockRegistration } from '@vetra/react/hooks/useMountedBlockMetrics'
+import { extendBlockSelectionToBlock } from '@vetra/react/selection/keyboardNavigation'
 
 export interface BlockRendererRootProps {
   readonly blockId: BlockId
@@ -24,9 +25,17 @@ export function BlockRenderer(props: BlockRendererRootProps) {
         return
       }
 
+      if (isShiftSelectionClick(event)) {
+        const focusedBlockId = extendBlockSelectionToBlock(editor, props.blockId)
+        if (focusedBlockId !== undefined) {
+          event.preventDefault()
+          return
+        }
+      }
+
       blockLifecycle.selectBlock()
     },
-    [blockLifecycle],
+    [blockLifecycle, editor, props.blockId],
   )
 
   const handleKeyDown = useCallback(
@@ -78,6 +87,10 @@ export function BlockRenderer(props: BlockRendererRootProps) {
       </div>
     </div>
   )
+}
+
+function isShiftSelectionClick(event: MouseEvent<HTMLDivElement>): boolean {
+  return event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
 }
 
 export interface UnknownBlockFallbackProps {
