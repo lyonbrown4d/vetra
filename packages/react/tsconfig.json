@@ -8,5 +8,9 @@
     "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "references": [{ "path": "../core" }, { "path": "../import-plain-text" }]
+  "references": [
+    { "path": "../core" },
+    { "path": "../import-plain-text" },
+    { "path": "../persistence-json" }
+  ]
 }

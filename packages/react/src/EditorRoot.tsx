@@ -10,6 +10,7 @@ import {
 import {
   createEditor,
   createEditorState,
+  getSelectedBlockIds,
   normalizeSelection,
   type BlockId,
   type DocumentState,
@@ -19,7 +20,12 @@ import { useEditor } from '@vetra/react/context/EditorContext'
 import { EditorProvider } from '@vetra/react/EditorProvider'
 import { BlockToolbar } from '@vetra/react/toolbar'
 import { SlashMenu } from '@vetra/react/menu'
-import { pasteIntoEditor } from '@vetra/react/paste'
+import {
+  createClipboardPayloadFromSelection,
+  pasteClipboardPayloadIntoEditor,
+  pasteIntoEditor,
+  VETRA_BLOCK_CLIPBOARD_MIME_TYPE,
+} from '@vetra/react/paste'
 import {
   collapseSelectionToBlock,
   deleteSelectedBlocks,
@@ -277,27 +283,93 @@ function EditorSurface(props: EditorSurfaceProps) {
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
       const activeBlockId = getActiveBlockId(editor)
-      const text = event.clipboardData.getData('text/plain')
-      if (activeBlockId === undefined || text.length === 0) {
+      if (activeBlockId === undefined || isLexicalActiveEditorTarget(event.target)) {
+        return
+      }
+
+      const clipboardText = event.clipboardData.getData('text/plain')
+      const customPayload = event.clipboardData.getData(VETRA_BLOCK_CLIPBOARD_MIME_TYPE)
+      if (customPayload.length > 0) {
+        const result = pasteClipboardPayloadIntoEditor({
+          editor,
+          target: { referenceBlockId: activeBlockId },
+          payload: customPayload,
+          idFactory: ({ index }) => createAvailableBlockId(editor, `paste-${String(index + 1)}`),
+        })
+        if (result.ok) {
+          event.preventDefault()
+          focusAfterPaste(editor, result, surfaceRef.current)
+          return
+        }
+      }
+
+      if (clipboardText.length === 0) {
+        return
+      }
+
+      const result = pasteIntoEditor({
+        editor,
+        target: { referenceBlockId: activeBlockId },
+        input: { text: clipboardText },
+        idFactory: ({ index }) => createAvailableBlockId(editor, `paste-${String(index + 1)}`),
+      })
+
+      if (result.ok) {
+        event.preventDefault()
+        focusAfterPaste(editor, result, surfaceRef.current)
+      }
+    },
+    [editor],
+  )
+
+  const handleCopy = useCallback(
+    (event: ClipboardEvent<HTMLDivElement>) => {
+      if (isLexicalActiveEditorTarget(event.target)) {
+        return
+      }
+
+      const state = editor.getState()
+      const selectedBlockIds = getSelectedBlockIds(
+        state.document,
+        normalizeSelection(state.document, state.selection),
+      )
+      if (selectedBlockIds.length === 0) {
         return
       }
 
       event.preventDefault()
 
-      const result = pasteIntoEditor({
-        editor,
-        target: { referenceBlockId: activeBlockId },
-        input: { text },
-        idFactory: ({ index }) => createAvailableBlockId(editor, `paste-${String(index + 1)}`),
-      })
+      const payload = createClipboardPayloadFromSelection(state.document, state.selection)
+      event.clipboardData.setData(VETRA_BLOCK_CLIPBOARD_MIME_TYPE, payload.json)
+      event.clipboardData.setData('text/plain', payload.plainText)
+    },
+    [editor],
+  )
 
-      if (result.ok) {
-        const lastInsertedBlockId = result.value.insertedBlockIds.at(-1)
-        if (lastInsertedBlockId !== undefined) {
-          editor.dispatch({
-            type: 'setSelection',
-            selection: { type: 'block', blockId: lastInsertedBlockId },
-          })
+  const handleCut = useCallback(
+    (event: ClipboardEvent<HTMLDivElement>) => {
+      if (isLexicalActiveEditorTarget(event.target)) {
+        return
+      }
+
+      const state = editor.getState()
+      const selectedBlockIds = getSelectedBlockIds(
+        state.document,
+        normalizeSelection(state.document, state.selection),
+      )
+      if (selectedBlockIds.length === 0) {
+        return
+      }
+
+      const payload = createClipboardPayloadFromSelection(state.document, state.selection)
+      event.clipboardData.setData(VETRA_BLOCK_CLIPBOARD_MIME_TYPE, payload.json)
+      event.clipboardData.setData('text/plain', payload.plainText)
+
+      const deleteResult = deleteSelectedBlocks(editor)
+      if (deleteResult !== undefined) {
+        event.preventDefault()
+        if (deleteResult.nextBlockId !== undefined) {
+          focusBlockShell(surfaceRef.current, deleteResult.nextBlockId)
         }
       }
     },
@@ -309,6 +381,8 @@ function EditorSurface(props: EditorSurfaceProps) {
       className={props.className ?? 'vetra-editor-root'}
       onKeyDown={handleKeyDown}
       onKeyDownCapture={handleKeyDownCapture}
+      onCopy={handleCopy}
+      onCut={handleCut}
       onPaste={handlePaste}
       ref={surfaceRef}
     >
@@ -470,4 +544,19 @@ function getBlockShell(root: HTMLElement | null, blockId: BlockId): HTMLElement 
 
 function focusBlockShell(root: HTMLElement | null, blockId: BlockId): void {
   getBlockShell(root, blockId)?.focus()
+}
+
+function focusAfterPaste(
+  editor: EditorRuntime,
+  result: { readonly value: { readonly insertedBlockIds: readonly BlockId[] } },
+  root: HTMLElement | null,
+): void {
+  const lastInsertedBlockId = result.value.insertedBlockIds.at(-1)
+  if (lastInsertedBlockId !== undefined) {
+    editor.dispatch({
+      type: 'setSelection',
+      selection: { type: 'block', blockId: lastInsertedBlockId },
+    })
+    focusBlockShell(root, lastInsertedBlockId)
+  }
 }

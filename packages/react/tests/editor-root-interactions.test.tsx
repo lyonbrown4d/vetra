@@ -10,7 +10,13 @@ import {
   type InlineContent,
   type ParagraphBlock,
 } from '@vetra/core'
-import { EditorRoot, type AnyReactBlockPlugin, type BlockRendererProps } from '@vetra/react'
+import {
+  EditorRoot,
+  type AnyReactBlockPlugin,
+  type BlockRendererProps,
+  VETRA_BLOCK_CLIPBOARD_MIME_TYPE,
+} from '@vetra/react'
+import { parseDocument } from '@vetra/persistence-json'
 
 interface VirtualizerOptions {
   readonly count: number
@@ -522,20 +528,150 @@ describe('EditorRoot integrated interactions', () => {
       rendered.cleanup()
     }
   })
+
+  it('copies selected blocks as block payload, then pastes them with selection intent', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor'), paragraph('block-b', 'Copied')],
+      }),
+    )
+
+    try {
+      act(() => {
+        getBlockShell(rendered.container, 'block-a').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+
+      const copyEvent = createClipboardEvent('copy')
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(copyEvent)
+      })
+
+      const copiedPayload = copyEvent.clipboardData?.getData(VETRA_BLOCK_CLIPBOARD_MIME_TYPE) ?? ''
+      expect(copiedPayload.length).toBeGreaterThan(0)
+      expect(copyEvent.defaultPrevented).toBe(true)
+
+      const parsedPayload = parseDocument(copiedPayload)
+      if (!parsedPayload.ok) {
+        throw new Error(parsedPayload.error.message)
+      }
+
+      expect(parsedPayload.value.children[parsedPayload.value.rootId]).toEqual(['block-a'])
+
+      act(() => {
+        getBlockShell(rendered.container, 'block-b').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(
+          createClipboardEvent('paste', { [VETRA_BLOCK_CLIPBOARD_MIME_TYPE]: copiedPayload }),
+        )
+      })
+
+      const rootChildren = rendered.latestDocument.children.root ?? []
+      expect(rootChildren).toHaveLength(3)
+      expect(rootChildren[0]).toBe('block-a')
+      expect(rootChildren[1]).toBe('block-b')
+      const pastedBlockId = expectDefined(rootChildren[2])
+      expect(readInlineText(rendered.latestDocument.blocks[pastedBlockId]?.content)).toBe('Anchor')
+      expect(rendered.latestDocument.blocks[pastedBlockId]?.type).toBe('paragraph')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('cuts selected blocks and inserts their payload on next paste', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor'), paragraph('block-b', 'Removed')],
+      }),
+    )
+
+    try {
+      act(() => {
+        getBlockShell(rendered.container, 'block-a').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+
+      const cutEvent = createClipboardEvent('cut')
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(cutEvent)
+      })
+
+      const cutPayload = cutEvent.clipboardData?.getData(VETRA_BLOCK_CLIPBOARD_MIME_TYPE) ?? ''
+      expect(cutEvent.defaultPrevented).toBe(true)
+      expect(rendered.latestDocument.children.root).toEqual(['block-b'])
+
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(
+          createClipboardEvent('paste', {
+            'text/plain': 'Fallback text',
+            [VETRA_BLOCK_CLIPBOARD_MIME_TYPE]: cutPayload,
+          }),
+        )
+      })
+
+      const rootChildren = rendered.latestDocument.children.root ?? []
+      expect(rootChildren).toHaveLength(2)
+      expect(rootChildren[1]).toMatch(/^paste-/)
+      expect(
+        readInlineText(rendered.latestDocument.blocks[expectDefined(rootChildren[1])]?.content),
+      ).toBe('Anchor')
+    } finally {
+      rendered.cleanup()
+    }
+  })
 })
 
-function createPasteEvent(text: string): Event {
+function createPasteEvent(text: string, extraData: Record<string, string> = {}): ClipboardEvent {
   const event = new Event('paste', { bubbles: true, cancelable: true })
+  const data: Record<string, string> = {
+    ...extraData,
+    'text/plain': text,
+  }
 
   Object.defineProperty(event, 'clipboardData', {
     value: {
       getData(format: string) {
-        return format === 'text/plain' ? text : ''
+        return data[format] ?? ''
+      },
+      setData(format: string, value: string) {
+        data[format] = value
+        return true
       },
     },
   })
 
-  return event
+  return event as ClipboardEvent
+}
+
+function createClipboardEvent(
+  type: 'copy' | 'cut' | 'paste',
+  extraData: Record<string, string> = {},
+): ClipboardEvent {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  const data: Record<string, string> = {
+    ...extraData,
+  }
+
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      getData(format: string) {
+        return data[format] ?? ''
+      },
+      setData(format: string, value: string) {
+        data[format] = value
+        return true
+      },
+    },
+  })
+
+  return event as ClipboardEvent
 }
 
 function readBlockText(block: DocBlock): string {
