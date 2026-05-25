@@ -66,10 +66,14 @@ export interface LexicalBlockEditorProps {
   readonly onMergeBlockBackward?: (intent: LexicalMergeBlockBackwardIntent) => void
   readonly onSplitBlock?: (intent: LexicalSplitBlockIntent) => void
   readonly onStructuralIntent?: (intent: LexicalBlockStructuralIntent) => void
+  readonly onUndo?: () => boolean | undefined
+  readonly onRedo?: () => boolean | undefined
 }
 
 interface LexicalBlockEditorBridgeCallbacks extends LexicalBlockStructuralIntentCallbacks {
   readonly onCommit: ((commit: LexicalBlockContentCommit) => void) | undefined
+  readonly onUndo: (() => boolean | undefined) | undefined
+  readonly onRedo: (() => boolean | undefined) | undefined
 }
 
 export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
@@ -84,6 +88,8 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
     onMergeBlockBackward: props.onMergeBlockBackward,
     onSplitBlock: props.onSplitBlock,
     onStructuralIntent: props.onStructuralIntent,
+    onUndo: props.onUndo,
+    onRedo: props.onRedo,
   })
   const commitLatestContentOnUnmount = useCallback(() => {
     emitContentCommit(
@@ -114,6 +120,25 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
 
   const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = (event) => {
     const isComposing = compositionStateRef.current.isComposing || event.nativeEvent.isComposing
+    const callbacks = bridgeCallbacksRef.current
+
+    if (!isComposing && isUndoShortcut(event) && callbacks.onUndo !== undefined) {
+      const handled = callbacks.onUndo()
+      if (handled !== false) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      return
+    }
+
+    if (!isComposing && isRedoShortcut(event) && callbacks.onRedo !== undefined) {
+      const handled = callbacks.onRedo()
+      if (handled !== false) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      return
+    }
 
     if (isStructuralKey(event.key) && !canRunStructuralKeyCommand({ isComposing })) {
       event.stopPropagation()
@@ -289,6 +314,31 @@ function readCompositionState(
   return {
     isComposing: compositionStateRef.current.isComposing || (event?.isComposing ?? false),
   }
+}
+
+interface KeyboardShortcutEvent {
+  readonly altKey: boolean
+  readonly ctrlKey: boolean
+  readonly metaKey: boolean
+  readonly shiftKey: boolean
+  readonly key: string
+}
+
+function hasPrimaryShortcutModifier(event: KeyboardShortcutEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && !event.altKey
+}
+
+function isUndoShortcut(event: KeyboardShortcutEvent): boolean {
+  return hasPrimaryShortcutModifier(event) && !event.shiftKey && event.key.toLowerCase() === 'z'
+}
+
+function isRedoShortcut(event: KeyboardShortcutEvent): boolean {
+  if (!hasPrimaryShortcutModifier(event)) {
+    return false
+  }
+
+  const key = event.key.toLowerCase()
+  return (event.shiftKey && key === 'z') || (!event.shiftKey && key === 'y')
 }
 
 function emitContentCommit(

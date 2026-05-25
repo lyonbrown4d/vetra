@@ -9,6 +9,7 @@ import type {
   InlineContent,
   InlineMark,
   InlineNode,
+  BlockId,
   ParagraphBlock,
   QuoteBlock,
 } from '@vetra/core'
@@ -166,6 +167,7 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
               type: 'setSelection',
               selection: { type: 'block', blockId: previousBlock.id },
             })
+            focusBlockShellAfterRender(activeBlockRootRef.current, previousBlock.id)
           }
 
           return result.ok
@@ -188,10 +190,13 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
               type: 'setSelection',
               selection: { type: 'block', blockId: afterBlockId },
             })
+            focusBlockShellAfterRender(activeBlockRootRef.current, afterBlockId)
           }
 
           return result.ok
         }}
+        onUndo={() => props.editor.undo().ok}
+        onRedo={() => props.editor.redo().ok}
         placeholder="Type..."
         value={value}
       />
@@ -257,6 +262,37 @@ function createNextBlockId(document: DocumentState, blockId: string): string {
 
 function createRandomIdSegment(): string {
   return globalThis.crypto.randomUUID()
+}
+
+function focusBlockShellAfterRender(anchor: HTMLElement | null, blockId: BlockId): void {
+  const root = anchor?.closest('.vetra-editor-root') ?? anchor?.ownerDocument ?? null
+
+  scheduleAfterRender(() => {
+    findBlockShell(root, blockId)?.focus()
+  })
+}
+
+function scheduleAfterRender(callback: () => void): void {
+  if (typeof globalThis.requestAnimationFrame === 'function') {
+    requestAnimationFrame(callback)
+    return
+  }
+
+  globalThis.setTimeout(callback, 0)
+}
+
+function findBlockShell(root: ParentNode | null, blockId: BlockId): HTMLElement | undefined {
+  if (root === null) {
+    return undefined
+  }
+
+  for (const element of root.querySelectorAll<HTMLElement>('[data-vetra-block-shell]')) {
+    if (element.dataset.vetraBlockShell === blockId) {
+      return element
+    }
+  }
+
+  return undefined
 }
 
 function CodeActive(props: BlockRendererProps<CodeBlock>) {

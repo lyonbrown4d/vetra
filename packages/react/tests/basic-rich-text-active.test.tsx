@@ -41,6 +41,8 @@ interface MockLexicalBlockEditorProps {
     intent: MockLexicalMergeBlockBackwardIntent,
   ) => boolean | undefined
   readonly onSplitBlock?: (intent: MockLexicalSplitBlockIntent) => boolean | undefined
+  readonly onUndo?: () => boolean | undefined
+  readonly onRedo?: () => boolean | undefined
 }
 
 const lexicalMock = vi.hoisted(() => ({
@@ -193,6 +195,37 @@ describe('basic rich text active renderer bridge', () => {
 
       expect(handled).toBe(false)
       expect(readBlockText(editor, 'block-a')).toBe('Committed')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('forwards undo and redo to editor history callbacks', () => {
+    const editor = createEditorWithParagraphs([paragraph('block-a', 'Hello')], 'block-a')
+    const rendered = renderBlock(editor, 'block-a')
+
+    try {
+      act(() => {
+        editor.dispatch({
+          type: 'updateBlock',
+          blockId: 'block-a',
+          patch: { content: createTextInlineContent('Edited') },
+        })
+      })
+
+      expect(readBlockText(editor, 'block-a')).toBe('Edited')
+
+      const activeEditor = getActiveLexicalProps()
+      let undoResult: boolean | undefined
+      let redoResult: boolean | undefined
+
+      act(() => {
+        undoResult = activeEditor.onUndo?.()
+        redoResult = activeEditor.onRedo?.()
+      })
+
+      expect(undoResult).toBe(true)
+      expect(redoResult).toBe(true)
     } finally {
       rendered.cleanup()
     }
