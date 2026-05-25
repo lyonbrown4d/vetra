@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   type CompositionEventHandler,
   type FocusEventHandler,
@@ -55,6 +56,8 @@ import {
   type LexicalAdapterTextNode,
 } from '@vetra/lexical/serializers/richText'
 
+const EXTERNAL_VALUE_SYNC_UPDATE_TAG = 'vetra-external-value-sync'
+
 export interface LexicalBlockEditorProps {
   readonly value: InlineContent
   readonly placeholder?: string
@@ -79,7 +82,6 @@ interface LexicalBlockEditorBridgeCallbacks extends LexicalBlockStructuralIntent
 }
 
 export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
-  const initialState = inlineContentToLexicalAdapterState(props.value)
   const latestValueRef = useRef(props.value)
   const ignoreContentUpdatesAfterStructuralIntentRef = useRef(false)
   const compositionStateRef = useRef<LexicalBlockEditorCompositionState>({
@@ -174,16 +176,11 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
           throw error
         },
         editorState() {
-          const root = $getRoot()
-          root.clear()
-          const paragraph = $createParagraphNode()
-          for (const textNode of initialState.root.children[0]?.children ?? []) {
-            paragraph.append(createLexicalTextNode(textNode))
-          }
-          root.append(paragraph)
+          writeInlineContentToLexicalRoot(props.value)
         },
       }}
     >
+      <ExternalValueSyncPlugin value={props.value} latestValueRef={latestValueRef} />
       <PlainTextPlugin
         contentEditable={
           <ContentEditable
@@ -203,7 +200,11 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
         }
       />
       <OnChangePlugin
-        onChange={(editorState: EditorState) => {
+        onChange={(editorState: EditorState, _editor, tags) => {
+          if (tags.has(EXTERNAL_VALUE_SYNC_UPDATE_TAG)) {
+            return
+          }
+
           if (ignoreContentUpdatesAfterStructuralIntentRef.current) {
             return
           }
@@ -222,6 +223,32 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
       />
     </LexicalComposer>
   )
+}
+
+function ExternalValueSyncPlugin(props: {
+  readonly value: InlineContent
+  readonly latestValueRef: RefObject<InlineContent>
+}) {
+  const [editor] = useLexicalComposerContext()
+
+  useLayoutEffect(() => {
+    if (props.value === props.latestValueRef.current) {
+      return
+    }
+
+    props.latestValueRef.current = props.value
+    editor.update(
+      () => {
+        writeInlineContentToLexicalRoot(props.value)
+      },
+      {
+        discrete: true,
+        tag: EXTERNAL_VALUE_SYNC_UPDATE_TAG,
+      },
+    )
+  }, [editor, props.latestValueRef, props.value])
+
+  return null
 }
 
 function StructuralCommandBridgePlugin(props: {
@@ -379,6 +406,18 @@ function dispatchStructuralIntent(
   callbacks: LexicalBlockEditorBridgeCallbacks,
 ): boolean {
   return dispatchLexicalBlockStructuralIntent(intent, callbacks)
+}
+
+function writeInlineContentToLexicalRoot(content: InlineContent): void {
+  const adapterState = inlineContentToLexicalAdapterState(content)
+  const root = $getRoot()
+  const paragraph = $createParagraphNode()
+
+  root.clear()
+  for (const textNode of adapterState.root.children[0]?.children ?? []) {
+    paragraph.append(createLexicalTextNode(textNode))
+  }
+  root.append(paragraph)
 }
 
 function createLexicalTextNode(node: LexicalAdapterTextNode) {

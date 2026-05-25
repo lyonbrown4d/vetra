@@ -226,6 +226,34 @@ test.describe('Vetra demo editor main editing path', () => {
     ).toContainText('Editor document changed')
   })
 
+  test('updates the active inline editor immediately after undo and redo', async ({ page }) => {
+    const blockId = 'intro-body'
+    const typedText = '!'
+
+    await activateBlock(page, blockId)
+    await setActiveInlineEditorCaret(page, 'end')
+    await page.keyboard.type(typedText)
+
+    await expect(activeInlineEditor(page)).toContainText(typedText)
+    await waitForSerializedDocument(page, (serialized) => {
+      return readBlockPlainText(expectBlock(serialized, blockId)).endsWith(typedText)
+    })
+
+    await activeInlineEditor(page).press('ControlOrMeta+Z')
+
+    await expect(activeInlineEditor(page)).not.toContainText(typedText)
+    await waitForSerializedDocument(page, (serialized) => {
+      return !readBlockPlainText(expectBlock(serialized, blockId)).endsWith(typedText)
+    })
+
+    await activeInlineEditor(page).press('ControlOrMeta+Shift+Z')
+
+    await expect(activeInlineEditor(page)).toContainText(typedText)
+    await waitForSerializedDocument(page, (serialized) => {
+      return readBlockPlainText(expectBlock(serialized, blockId)).endsWith(typedText)
+    })
+  })
+
   test('pastes plain text into multiple blocks and updates the serialized document', async ({
     page,
   }) => {
