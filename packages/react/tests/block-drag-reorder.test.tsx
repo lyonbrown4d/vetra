@@ -67,6 +67,13 @@ interface MockSortableArguments {
   readonly id: string | number
 }
 
+interface MockSortableTransform {
+  readonly x: number
+  readonly y: number
+  readonly scaleX: number
+  readonly scaleY: number
+}
+
 interface VirtualizerOptions {
   readonly count: number
 }
@@ -75,6 +82,7 @@ const dndMock = vi.hoisted(() => {
   let dragEndHandler: MockDragEndHandler | undefined
   let dragOverHandler: MockDragOverHandler | undefined
   let dragCancelHandler: MockDragCancelHandler | undefined
+  let sortableTransform: MockSortableTransform | null = null
 
   return {
     dispatchDragEnd(event: MockDragEndEvent) {
@@ -108,6 +116,7 @@ const dndMock = vi.hoisted(() => {
       dragEndHandler = undefined
       dragOverHandler = undefined
       dragCancelHandler = undefined
+      sortableTransform = null
     },
     setDragEndHandler(handler: MockDragEndHandler | undefined) {
       dragEndHandler = handler
@@ -117,6 +126,12 @@ const dndMock = vi.hoisted(() => {
     },
     setDragCancelHandler(handler: MockDragCancelHandler | undefined) {
       dragCancelHandler = handler
+    },
+    getSortableTransform() {
+      return sortableTransform
+    },
+    setSortableTransform(transform: MockSortableTransform | null) {
+      sortableTransform = transform
     },
   }
 })
@@ -205,7 +220,7 @@ vi.mock('@dnd-kit/sortable', () => ({
       setNodeRef() {
         return undefined
       },
-      transform: null,
+      transform: dndMock.getSortableTransform(),
       transition: undefined,
     }
   },
@@ -377,6 +392,35 @@ describe('resolveTopLevelBlockDragMove', () => {
 })
 
 describe('VirtualBlockList drag reorder', () => {
+  it('keeps virtual positioning separate from sortable drag transforms', () => {
+    dndMock.setSortableTransform({ scaleX: 1, scaleY: 1, x: 8, y: 12 })
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'A'), paragraph('block-b', 'B')],
+    })
+    const commands: EditorCommand[] = []
+    const recordingEditor = createRecordingEditor(
+      createEditor(createEditorState(document)),
+      commands,
+    )
+    const rendered = renderVirtualList(recordingEditor)
+
+    try {
+      const sortableItem = rendered.container.querySelector<HTMLElement>(
+        '[data-vetra-sortable-block="block-b"]',
+      )
+      const dragLayer = rendered.container.querySelector<HTMLElement>(
+        '[data-vetra-sortable-drag-layer="block-b"]',
+      )
+
+      expect(sortableItem?.style.transform).toBe('translateY(48px)')
+      expect(dragLayer?.style.transform).toContain('translate')
+      expect(dragLayer?.style.transform).not.toContain('translateY(48px)')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
   it('dispatches moveBlock through core and keeps document order as the source of truth', () => {
     const document = createDocument({
       id: 'doc',

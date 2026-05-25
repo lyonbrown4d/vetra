@@ -91,6 +91,19 @@ function getMenuItem(container: Element, itemId: string): HTMLElement {
   return item
 }
 
+function getMenuItemIds(container: Element): readonly string[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('[data-vetra-slash-menu-item]')).map(
+    (item) => {
+      const itemId = item.getAttribute('data-vetra-slash-menu-item')
+      if (itemId === null) {
+        throw new Error('Expected slash menu item id.')
+      }
+
+      return itemId
+    },
+  )
+}
+
 describe('SlashMenu', () => {
   it('inserts the filtered block after the target block with Enter', () => {
     const editor = createEditorWithTwoBlocks()
@@ -127,6 +140,104 @@ describe('SlashMenu', () => {
       expect(selectedEvent?.result.ok).toBe(true)
     } finally {
       rendered.cleanup()
+    }
+  })
+
+  it('filters default items by slash aliases, keywords, and query tokens', () => {
+    const cases: readonly {
+      readonly query: string
+      readonly expectedItemIds: readonly string[]
+      readonly expectedIcon: string
+    }[] = [
+      { query: '/h1', expectedItemIds: ['heading-1'], expectedIcon: 'heading-1' },
+      { query: '/h2', expectedItemIds: ['heading'], expectedIcon: 'heading-2' },
+      { query: '/todo', expectedItemIds: ['todo'], expectedIcon: 'check-square' },
+      { query: '/note', expectedItemIds: ['callout'], expectedIcon: 'message-square-text' },
+      { query: '/code js', expectedItemIds: ['code'], expectedIcon: 'code' },
+    ]
+
+    for (const testCase of cases) {
+      const editor = createEditorWithTwoBlocks()
+      const rendered = renderSlashMenu(editor, {
+        mode: 'insert-after',
+        query: testCase.query,
+        idFactory: () => 'unused',
+      })
+
+      try {
+        expect(getMenuItemIds(rendered.container)).toEqual(testCase.expectedItemIds)
+        expect(
+          getMenuItem(rendered.container, testCase.expectedItemIds[0] ?? '').getAttribute(
+            'data-icon',
+          ),
+        ).toBe(testCase.expectedIcon)
+        expect(
+          getMenuItem(rendered.container, testCase.expectedItemIds[0] ?? '').querySelector(
+            '[data-vetra-slash-menu-item-icon] svg',
+          ),
+        ).not.toBeNull()
+      } finally {
+        rendered.cleanup()
+      }
+    }
+  })
+
+  it('uses the matched heading alias when inserting a heading level', () => {
+    const editor = createEditorWithTwoBlocks()
+    const rendered = renderSlashMenu(editor, {
+      mode: 'insert-after',
+      query: '/h1',
+      idFactory: () => 'heading-one',
+    })
+
+    try {
+      dispatchKeyboardEvent(getSlashMenu(rendered.container), 'Enter')
+
+      expect(editor.getState().document.blocks['heading-one']).toMatchObject({
+        id: 'heading-one',
+        type: 'heading',
+        props: { level: 1 },
+      })
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('inserts todo and callout blocks from default menu items', () => {
+    const cases: readonly {
+      readonly query: string
+      readonly blockId: string
+      readonly expectedBlock: Readonly<Record<string, unknown>>
+    }[] = [
+      {
+        query: '/todo',
+        blockId: 'todo-new',
+        expectedBlock: { id: 'todo-new', type: 'todo', props: { checked: false } },
+      },
+      {
+        query: '/note',
+        blockId: 'callout-new',
+        expectedBlock: { id: 'callout-new', type: 'callout', props: { tone: 'info' } },
+      },
+    ]
+
+    for (const testCase of cases) {
+      const editor = createEditorWithTwoBlocks()
+      const rendered = renderSlashMenu(editor, {
+        mode: 'insert-after',
+        query: testCase.query,
+        idFactory: () => testCase.blockId,
+      })
+
+      try {
+        dispatchKeyboardEvent(getSlashMenu(rendered.container), 'Enter')
+
+        expect(editor.getState().document.blocks[testCase.blockId]).toMatchObject(
+          testCase.expectedBlock,
+        )
+      } finally {
+        rendered.cleanup()
+      }
     }
   })
 

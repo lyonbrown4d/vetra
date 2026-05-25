@@ -16,7 +16,13 @@ import type {
 import { createEmptyInlineContent, findParentId, getBlockChildren } from '@vetra/core'
 import { focusBlockShellAfterRender } from '@vetra/react/focus'
 import { selectAllTopLevelBlocks } from '@vetra/react/selection'
-import { isInlineContent, type CodeBlock } from '@vetra/blocks-basic/blocks'
+import {
+  isInlineContent,
+  type BasicRichTextBlock,
+  type CalloutBlock,
+  type CodeBlock,
+  type TodoBlock,
+} from '@vetra/blocks-basic/blocks'
 
 export const basicBlocks: readonly AnyReactBlockPlugin[] = [
   defineReactBlock<ParagraphBlock>({
@@ -32,6 +38,16 @@ export const basicBlocks: readonly AnyReactBlockPlugin[] = [
   defineReactBlock<QuoteBlock>({
     type: 'quote',
     readonlyRenderer: QuoteReadonly,
+    activeRenderer: RichTextActive,
+  }),
+  defineReactBlock<TodoBlock>({
+    type: 'todo',
+    readonlyRenderer: TodoReadonly,
+    activeRenderer: RichTextActive,
+  }),
+  defineReactBlock<CalloutBlock>({
+    type: 'callout',
+    readonlyRenderer: CalloutReadonly,
     activeRenderer: RichTextActive,
   }),
   defineReactBlock<CodeBlock>({
@@ -69,6 +85,35 @@ function QuoteReadonly(props: BlockRendererProps<QuoteBlock>) {
   )
 }
 
+function TodoReadonly(props: BlockRendererProps<TodoBlock>) {
+  const checked = props.block.props?.checked === true
+
+  return (
+    <div
+      className="vetra-block vetra-block--todo"
+      data-block-id={props.block.id}
+      data-checked={checked ? 'true' : 'false'}
+    >
+      <input aria-label="Todo checked" checked={checked} readOnly type="checkbox" />
+      <span className="vetra-block__content">{renderInlineContent(props.block.content)}</span>
+    </div>
+  )
+}
+
+function CalloutReadonly(props: BlockRendererProps<CalloutBlock>) {
+  const tone = props.block.props?.tone ?? 'info'
+
+  return (
+    <div
+      className="vetra-block vetra-block--callout"
+      data-block-id={props.block.id}
+      data-tone={tone}
+    >
+      {renderInlineContent(props.block.content)}
+    </div>
+  )
+}
+
 function DividerReadonly(props: BlockRendererProps<DividerBlock>) {
   return (
     <div className="vetra-block vetra-block--divider" data-block-id={props.block.id}>
@@ -87,7 +132,7 @@ function CodeReadonly(props: BlockRendererProps<CodeBlock>) {
   )
 }
 
-function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock | QuoteBlock>) {
+function RichTextActive(props: BlockRendererProps<BasicRichTextBlock>) {
   const value = isInlineContent(props.block.content)
     ? props.block.content
     : createEmptyInlineContent()
@@ -132,7 +177,7 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
 
   return (
     <div
-      className="vetra-block vetra-block--active"
+      className={`vetra-block vetra-block--active vetra-block--${props.block.type}`}
       data-block-id={props.block.id}
       ref={activeBlockRootRef}
     >
@@ -208,7 +253,7 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
 }
 
 function updateRichTextBlockContent(
-  props: BlockRendererProps<ParagraphBlock | HeadingBlock | QuoteBlock>,
+  props: BlockRendererProps<BasicRichTextBlock>,
   nextValue: InlineContent,
 ): void {
   if (props.block.content === nextValue) {

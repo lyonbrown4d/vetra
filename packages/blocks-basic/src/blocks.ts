@@ -8,6 +8,24 @@ import {
 } from '@vetra/core'
 import type { DocBlock, InlineContent } from '@vetra/core'
 
+export type CalloutTone = 'info' | 'success' | 'warning' | 'danger'
+
+export interface TodoBlock extends DocBlock {
+  readonly type: 'todo'
+  readonly props?: {
+    readonly checked?: boolean
+  }
+  readonly content: InlineContent
+}
+
+export interface CalloutBlock extends DocBlock {
+  readonly type: 'callout'
+  readonly props?: {
+    readonly tone?: CalloutTone
+  }
+  readonly content: InlineContent
+}
+
 export interface CodeBlock extends DocBlock {
   readonly type: 'code'
   readonly props?: {
@@ -16,7 +34,14 @@ export interface CodeBlock extends DocBlock {
   readonly content: string
 }
 
-export type BasicBlock = ParagraphBlock | HeadingBlock | QuoteBlock | DividerBlock | CodeBlock
+export type BasicRichTextBlock =
+  | ParagraphBlock
+  | HeadingBlock
+  | QuoteBlock
+  | TodoBlock
+  | CalloutBlock
+
+export type BasicBlock = BasicRichTextBlock | DividerBlock | CodeBlock
 
 export function createParagraphBlock(id: string, text = ''): ParagraphBlock {
   return {
@@ -43,6 +68,28 @@ export function createQuoteBlock(id: string, text = ''): QuoteBlock {
   return {
     id,
     type: 'quote',
+    content: text.length === 0 ? createEmptyInlineContent() : createTextInlineContent(text),
+  }
+}
+
+export function createTodoBlock(id: string, text = '', checked = false): TodoBlock {
+  return {
+    id,
+    type: 'todo',
+    props: { checked },
+    content: text.length === 0 ? createEmptyInlineContent() : createTextInlineContent(text),
+  }
+}
+
+export function createCalloutBlock(
+  id: string,
+  text = '',
+  tone: CalloutTone = 'info',
+): CalloutBlock {
+  return {
+    id,
+    type: 'callout',
+    props: { tone },
     content: text.length === 0 ? createEmptyInlineContent() : createTextInlineContent(text),
   }
 }

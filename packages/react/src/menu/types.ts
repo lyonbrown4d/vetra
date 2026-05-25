@@ -25,6 +25,8 @@ export interface SlashMenuItem {
   readonly id: string
   readonly label: string
   readonly blockType: string
+  readonly icon?: string
+  readonly aliases?: readonly string[]
   readonly description?: string
   readonly keywords?: readonly string[]
   readonly createBlock: (context: SlashMenuBlockFactoryContext) => DocBlock

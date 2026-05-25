@@ -34,6 +34,18 @@ interface ToolStatus {
   readonly message: string
 }
 
+interface ActivityLogEntry {
+  readonly id: number
+  readonly action: string
+  readonly version: number
+  readonly previousVersion: number | null
+  readonly versionDelta: number
+  readonly blockDelta: number
+  readonly rootBlockDelta: number
+  readonly blockCount: number
+  readonly rootBlockCount: number
+}
+
 type ExchangePanel = 'json' | 'plain-text' | 'markdown'
 type LoadedDocumentSource = PlaygroundFixtureId | 'custom'
 
@@ -124,20 +136,26 @@ export function App() {
   const [markdownText, setMarkdownText] = useState(() =>
     createMarkdownPanelText(initialDocument, initialFixtureId),
   )
+  const [activityLog, setActivityLog] = useState<readonly ActivityLogEntry[]>(() => [
+    createActivityLogEntry(0, 'Initial fixture loaded', initialDocument),
+  ])
   const [activeExchangePanel, setActiveExchangePanel] = useState<ExchangePanel>('json')
   const [status, setStatus] = useState<ToolStatus>(idleStatus)
+  const activitySequenceRef = useRef(1)
+  const lastDocumentRef = useRef<DocumentState>(initialDocument)
   const editorRegionRef = useRef<HTMLElement | null>(null)
   const editorDomMetrics = useEditorDomMetrics(editorRegionRef)
   const selectedFixture = getPlaygroundFixture(selectedFixtureId)
   const loadedFixture =
     loadedDocumentSource === 'custom' ? undefined : getPlaygroundFixture(loadedDocumentSource)
-  const blockCount = Math.max(0, Object.keys(document.blocks).length - 1)
-  const rootBlockCount = document.children[document.rootId]?.length ?? 0
+  const blockCount = getDocumentBlockCount(document)
+  const rootBlockCount = getRootBlockCount(document)
   const mountedBlockCount = editorDomMetrics.mountedBlockCount
   const activeEditorCount = editorDomMetrics.activeEditorCount
   const virtualizationRatio =
     rootBlockCount > 0 ? Math.min(1, mountedBlockCount / rootBlockCount) : 0
   const activeExchangeDefinition = getExchangePanel(activeExchangePanel)
+  const latestActivity = activityLog[0]
   const reactScanRows = useMemo(
     () =>
       [
@@ -169,18 +187,48 @@ export function App() {
       message: string,
       source: LoadedDocumentSource = selectedFixtureId,
     ) => {
+      const previousDocument = lastDocumentRef.current
+
       setEditorSeed(nextDocument)
       setDocument(nextDocument)
+      lastDocumentRef.current = nextDocument
       setLoadedDocumentSource(source)
       setEditorResetKey((current) => current + 1)
       syncTextareas(nextDocument, source)
+      setActivityLog((current) =>
+        prependActivityLog(
+          current,
+          createActivityLogEntry(
+            activitySequenceRef.current,
+            message,
+            nextDocument,
+            previousDocument,
+          ),
+        ),
+      )
+      activitySequenceRef.current += 1
       setStatus({ tone: 'success', message })
     },
     [selectedFixtureId, syncTextareas],
   )
 
   const handleEditorChange = useCallback((nextDocument: DocumentState) => {
+    const previousDocument = lastDocumentRef.current
+
+    lastDocumentRef.current = nextDocument
     setDocument(nextDocument)
+    setActivityLog((current) =>
+      prependActivityLog(
+        current,
+        createActivityLogEntry(
+          activitySequenceRef.current,
+          'Editor document changed',
+          nextDocument,
+          previousDocument,
+        ),
+      ),
+    )
+    activitySequenceRef.current += 1
   }, [])
 
   const handleFixtureChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
@@ -472,7 +520,9 @@ export function App() {
             </div>
             <div>
               <dt>Version</dt>
-              <dd>{formatNumber(document.version)}</dd>
+              <dd data-vetra-inspector-document-version={String(document.version)}>
+                {formatNumber(document.version)}
+              </dd>
             </div>
             <div>
               <dt>Mounted blocks</dt>
@@ -487,6 +537,84 @@ export function App() {
               <dd>{formatPercent(virtualizationRatio)}</dd>
             </div>
           </dl>
+        </section>
+
+        <section className="vetra-demo-panel" aria-labelledby="selection-panel-title">
+          <div className="vetra-demo-panel__header">
+            <h2 id="selection-panel-title">Selection inspector</h2>
+            <span>Derived from the rendered editor surface</span>
+          </div>
+          <dl className="vetra-demo-stats" aria-label="Selection inspector">
+            <div>
+              <dt>Active block</dt>
+              <dd
+                data-vetra-inspector-active-block-id={editorDomMetrics.activeBlockId ?? 'none'}
+                title={editorDomMetrics.activeBlockId ?? 'No active block'}
+              >
+                {editorDomMetrics.activeBlockId ?? 'None'}
+              </dd>
+            </div>
+            <div>
+              <dt>Selected blocks</dt>
+              <dd data-vetra-inspector-selected-count={String(editorDomMetrics.selectedBlockCount)}>
+                {formatNumber(editorDomMetrics.selectedBlockCount)}
+              </dd>
+            </div>
+            <div>
+              <dt>Focused block</dt>
+              <dd title={editorDomMetrics.focusedBlockId ?? 'No focused block'}>
+                {editorDomMetrics.focusedBlockId ?? 'None'}
+              </dd>
+            </div>
+            <div>
+              <dt>Focused editor</dt>
+              <dd>{editorDomMetrics.hasFocusedInlineEditor ? 'Yes' : 'No'}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="vetra-demo-panel" aria-labelledby="activity-panel-title">
+          <div className="vetra-demo-panel__header">
+            <h2 id="activity-panel-title">Activity log</h2>
+            <span>Recent document versions observed by the playground</span>
+          </div>
+          <dl className="vetra-demo-stats vetra-demo-stats--compact" aria-label="Activity summary">
+            <div>
+              <dt>Observed changes</dt>
+              <dd data-vetra-inspector-activity-count={String(Math.max(0, activityLog.length - 1))}>
+                {formatNumber(Math.max(0, activityLog.length - 1))}
+              </dd>
+            </div>
+            <div>
+              <dt>Last version delta</dt>
+              <dd>{formatSignedNumber(latestActivity?.versionDelta ?? 0)}</dd>
+            </div>
+            <div>
+              <dt>Block delta</dt>
+              <dd>{formatSignedNumber(latestActivity?.blockDelta ?? 0)}</dd>
+            </div>
+            <div>
+              <dt>Root delta</dt>
+              <dd>{formatSignedNumber(latestActivity?.rootBlockDelta ?? 0)}</dd>
+            </div>
+          </dl>
+          <ol className="vetra-demo-activity-log" aria-label="Activity log">
+            {activityLog.map((entry) => (
+              <li key={entry.id}>
+                <strong>{entry.action}</strong>
+                <span>
+                  v{formatNumber(entry.version)}
+                  {entry.previousVersion === null
+                    ? ''
+                    : ` from v${formatNumber(entry.previousVersion)}`}
+                  {' · '}
+                  blocks {formatNumber(entry.blockCount)}
+                  {' · '}
+                  root {formatNumber(entry.rootBlockCount)}
+                </span>
+              </li>
+            ))}
+          </ol>
         </section>
 
         <section className="vetra-demo-panel" aria-labelledby="react-scan-panel-title">
@@ -621,14 +749,75 @@ function createBenchmarkPanelText(
   return [
     message,
     `Fixture: ${fixtureId}`,
-    `Blocks: ${String(Math.max(0, Object.keys(document.blocks).length - 1))}`,
-    `Root blocks: ${String(document.children[document.rootId]?.length ?? 0)}`,
+    `Blocks: ${String(getDocumentBlockCount(document))}`,
+    `Root blocks: ${String(getRootBlockCount(document))}`,
     fixture.description,
   ].join('\n')
 }
 
+function getDocumentBlockCount(document: DocumentState): number {
+  return Math.max(0, Object.keys(document.blocks).length - 1)
+}
+
+function getRootBlockCount(document: DocumentState): number {
+  return document.children[document.rootId]?.length ?? 0
+}
+
+function createActivityLogEntry(
+  id: number,
+  action: string,
+  document: DocumentState,
+  previousDocument?: DocumentState,
+): ActivityLogEntry {
+  const blockCount = getDocumentBlockCount(document)
+  const rootBlockCount = getRootBlockCount(document)
+  const previousBlockCount =
+    previousDocument === undefined ? blockCount : getDocumentBlockCount(previousDocument)
+  const previousRootBlockCount =
+    previousDocument === undefined ? rootBlockCount : getRootBlockCount(previousDocument)
+  const previousVersion = previousDocument?.version ?? null
+
+  return {
+    action,
+    blockCount,
+    blockDelta: blockCount - previousBlockCount,
+    id,
+    previousVersion,
+    rootBlockCount,
+    rootBlockDelta: rootBlockCount - previousRootBlockCount,
+    version: document.version,
+    versionDelta: previousVersion === null ? 0 : document.version - previousVersion,
+  }
+}
+
+function prependActivityLog(
+  current: readonly ActivityLogEntry[],
+  entry: ActivityLogEntry,
+): readonly ActivityLogEntry[] {
+  const previousEntry = current[0]
+
+  if (
+    previousEntry?.version === entry.version &&
+    previousEntry.blockCount === entry.blockCount &&
+    previousEntry.rootBlockCount === entry.rootBlockCount &&
+    previousEntry.action === entry.action
+  ) {
+    return current
+  }
+
+  return [entry, ...current].slice(0, 8)
+}
+
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US').format(value)
+}
+
+function formatSignedNumber(value: number): string {
+  if (value === 0) {
+    return '0'
+  }
+
+  return value > 0 ? `+${formatNumber(value)}` : formatNumber(value)
 }
 
 function formatPercent(value: number): string {
@@ -641,12 +830,20 @@ function formatPercent(value: number): string {
 interface EditorDomMetrics {
   readonly mountedBlockCount: number
   readonly activeEditorCount: number
+  readonly activeBlockId: string | null
+  readonly selectedBlockCount: number
+  readonly focusedBlockId: string | null
+  readonly hasFocusedInlineEditor: boolean
 }
 
 function useEditorDomMetrics(ref: RefObject<HTMLElement | null>): EditorDomMetrics {
   const [metrics, setMetrics] = useState<EditorDomMetrics>({
+    activeBlockId: null,
     mountedBlockCount: 0,
     activeEditorCount: 0,
+    focusedBlockId: null,
+    hasFocusedInlineEditor: false,
+    selectedBlockCount: 0,
   })
 
   useEffect(() => {
@@ -656,22 +853,49 @@ function useEditorDomMetrics(ref: RefObject<HTMLElement | null>): EditorDomMetri
     }
 
     const updateMetrics = () => {
+      const activeBlock = element.querySelector<HTMLElement>(
+        '[data-vetra-block-shell][data-active="true"]',
+      )
+      const focusedElement = element.ownerDocument.activeElement
+      const focusedBlock =
+        focusedElement instanceof HTMLElement
+          ? focusedElement.closest<HTMLElement>('[data-vetra-block-shell]')
+          : null
+
       setMetrics({
-        mountedBlockCount: element.querySelectorAll('.vetra-block').length,
+        activeBlockId: activeBlock?.dataset.vetraBlockShell ?? null,
         activeEditorCount: element.querySelectorAll('.vetra-inline-editor[contenteditable="true"]')
           .length,
+        focusedBlockId: focusedBlock?.dataset.vetraBlockShell ?? null,
+        hasFocusedInlineEditor:
+          focusedElement instanceof HTMLElement &&
+          focusedElement.matches('.vetra-inline-editor[contenteditable="true"]'),
+        mountedBlockCount: element.querySelectorAll('.vetra-block').length,
+        selectedBlockCount: element.querySelectorAll(
+          '[data-vetra-block-shell][data-selected="true"]',
+        ).length,
       })
     }
     const observer = new MutationObserver(updateMetrics)
 
     updateMetrics()
     observer.observe(element, {
+      attributes: true,
+      attributeFilter: ['data-active', 'data-selected'],
       childList: true,
       subtree: true,
     })
+    element.addEventListener('focusin', updateMetrics)
+    element.addEventListener('focusout', updateMetrics)
+    element.addEventListener('keyup', updateMetrics)
+    element.addEventListener('pointerup', updateMetrics)
 
     return () => {
       observer.disconnect()
+      element.removeEventListener('focusin', updateMetrics)
+      element.removeEventListener('focusout', updateMetrics)
+      element.removeEventListener('keyup', updateMetrics)
+      element.removeEventListener('pointerup', updateMetrics)
     }
   }, [ref])
 

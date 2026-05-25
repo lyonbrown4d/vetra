@@ -1,4 +1,15 @@
 import { autoUpdate, flip, offset, shift, size, useFloating } from '@floating-ui/react'
+import {
+  Code,
+  Heading1,
+  Heading2,
+  MessageSquareText,
+  Quote,
+  SeparatorHorizontal,
+  SquareCheckBig,
+  Type,
+  type LucideIcon,
+} from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, type CSSProperties } from 'react'
 import { useSlashMenu, type UseSlashMenuOptions } from '@vetra/react/menu/useSlashMenu'
 
@@ -96,6 +107,7 @@ export function SlashMenu(props: SlashMenuProps) {
       ) : (
         menu.items.map((item, index) => {
           const active = index === menu.activeIndex
+          const Icon = item.icon === undefined ? undefined : slashMenuIcons[item.icon]
 
           return (
             <button
@@ -103,6 +115,7 @@ export function SlashMenu(props: SlashMenuProps) {
               className={`${className}__item`}
               data-active={active ? 'true' : 'false'}
               data-block-type={item.blockType}
+              data-icon={item.icon}
               data-vetra-slash-menu-item={item.id}
               id={createItemElementId(menuId, item.id)}
               key={item.id}
@@ -115,6 +128,15 @@ export function SlashMenu(props: SlashMenuProps) {
               role="menuitem"
               type="button"
             >
+              {Icon === undefined ? null : (
+                <span
+                  aria-hidden="true"
+                  className={`${className}__item-icon`}
+                  data-vetra-slash-menu-item-icon={item.icon}
+                >
+                  <Icon aria-hidden="true" size={16} strokeWidth={2} />
+                </span>
+              )}
               <span className={`${className}__item-label`}>{item.label}</span>
               {item.description === undefined ? null : (
                 <span className={`${className}__item-description`}>{item.description}</span>
@@ -125,6 +147,17 @@ export function SlashMenu(props: SlashMenuProps) {
       )}
     </div>
   )
+}
+
+const slashMenuIcons: Readonly<Record<string, LucideIcon>> = {
+  code: Code,
+  'check-square': SquareCheckBig,
+  'heading-1': Heading1,
+  'heading-2': Heading2,
+  'message-square-text': MessageSquareText,
+  'separator-horizontal': SeparatorHorizontal,
+  quote: Quote,
+  text: Type,
 }
 
 function createItemElementId(menuId: string, itemId: string): string {

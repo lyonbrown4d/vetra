@@ -54,10 +54,14 @@ Vetra 的核心路线是把大文档编辑拆成三层稳定职责：
 
 ## Current Iteration
 
-The first iteration focuses on five items:
+This iteration focuses on the Notion-like playground layer and basic block coverage:
 
-1. Core selection helpers.
-2. Block range highlight for mounted virtual blocks.
-3. Shift+Click and Shift+Arrow block range selection.
-4. Batch `deleteBlocks` command for one-step history.
-5. Unit, Storybook, and E2E coverage for selection behavior.
+1. Upgrade the default slash menu with alias/token matching, Lucide-backed item icons, and
+   block actions for `/h1`, `/h2`, `/todo`, `/note`, and `/code js`.
+2. Add basic todo and callout block definitions plus React readonly/active renderer coverage.
+3. Expose a playground runtime inspector for document version, active block, selected block count,
+   focused block, mounted block count, active editor count, and recent document activity.
+4. Keep the playground acceptance story close to the downstream caller experience instead of a
+   static demo-only view.
+5. Gate the work with strict TypeScript, focused unit tests, E2E inspector coverage, and Storybook
+   smoke/build checks.

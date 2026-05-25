@@ -1110,6 +1110,8 @@ export interface ReactBlockPlugin<TBlock extends DocBlock = DocBlock> {
 - paragraph block；
 - heading block；
 - quote block；
+- todo block；
+- callout block；
 - divider block；
 - code block 简版；
 - virtualized block renderer；
@@ -1119,11 +1121,12 @@ export interface ReactBlockPlugin<TBlock extends DocBlock = DocBlock> {
 - block insert；
 - block delete；
 - block move；
-- slash menu 简版；
+- slash menu 简版，包括 alias / keyword query 和 icon metadata；
 - readonly renderer；
 - JSON import/export；
 - Storybook；
 - playground 页面；
+- playground runtime inspector；
 - benchmark fixture；
 - 单元测试；
 - Playwright E2E；
@@ -1150,8 +1153,10 @@ Playground 应作为下游调用方理解 Vetra 能力的完整示例，而不�
 
 - 编辑画布不使用 card 外框，active block 不弹出卡片化容器；
 - slash menu 使用 Floating UI 在 active block 附近浮层定位，不占据文档流；
+- slash menu 支持 `/h1`、`/h2`、`/todo`、`/note`、`/code js` 等 alias / token query，并用现有 icon library 展示 block action；
 - 每个 block 前展示 gutter controls，包括加号插入段落和拖拽手柄；
 - block reorder 通过 dnd-kit 在 React renderer 内完成交互编排，并通过 core `moveBlock` command 修改文档顺序；
+- playground inspector 展示 document version、active block、selected count、mounted block count、active editor count 和 activity log；
 - V1 只支持 root-level visible block reorder，nested indent / outdent 和跨层级拖拽后续迭代。
 
 这些能力属于 `@vetra/react` 和 playground 展示层，不允许反向污染 `@vetra/core`。

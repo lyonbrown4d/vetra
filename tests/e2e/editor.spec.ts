@@ -152,6 +152,80 @@ test.describe('Vetra demo editor main editing path', () => {
     )
   })
 
+  test('drags a root block with a separated virtual row and drag layer', async ({ page }) => {
+    const draggedBlockId = 'intro-body'
+    const targetBlockId = 'design-quote'
+    const before = await readSerializedDocument(page)
+
+    await blockRow(page, draggedBlockId).hover()
+    const dragHandleBox = await readLocatorBox(blockDragHandle(page, draggedBlockId))
+    const targetBox = await readLocatorBox(sortableBlock(page, targetBlockId))
+
+    expect(await readInlineStyleTransform(sortableBlock(page, draggedBlockId))).toContain(
+      'translateY(',
+    )
+    expect(await readInlineStyleTransform(sortableDragLayer(page, draggedBlockId))).not.toContain(
+      'translateY(',
+    )
+
+    await page.mouse.move(
+      dragHandleBox.x + dragHandleBox.width / 2,
+      dragHandleBox.y + dragHandleBox.height / 2,
+    )
+    await page.mouse.down()
+    await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height + 16, {
+      steps: 10,
+    })
+
+    expect(await readInlineStyleTransform(sortableBlock(page, draggedBlockId))).toContain(
+      'translateY(',
+    )
+    expect(await readInlineStyleTransform(sortableDragLayer(page, draggedBlockId))).not.toContain(
+      'translateY(',
+    )
+
+    await page.mouse.up()
+
+    const after = await waitForSerializedDocument(page, (serialized) => {
+      const children = getRootChildren(serialized)
+
+      return children.indexOf(draggedBlockId) > children.indexOf(targetBlockId)
+    })
+    const afterChildren = getRootChildren(after)
+
+    expect(after.document.version).toBeGreaterThan(before.document.version)
+    expect(afterChildren.indexOf(draggedBlockId)).toBeGreaterThan(
+      afterChildren.indexOf(targetBlockId),
+    )
+  })
+
+  test('updates the playground inspector after editing a block', async ({ page }) => {
+    const blockId = 'intro-body'
+    const beforeVersion = await readInspectorDocumentVersion(page)
+    const beforeActivityCount = await readInspectorActivityCount(page)
+
+    await activateBlock(page, blockId)
+    await expect(inspectorActiveBlockId(page)).toHaveAttribute(
+      'data-vetra-inspector-active-block-id',
+      blockId,
+    )
+
+    await setActiveInlineEditorCaret(page, 'end')
+    await page.keyboard.type(' Inspector update')
+
+    await expect.poll(async () => readInspectorDocumentVersion(page)).toBeGreaterThan(beforeVersion)
+    await expect
+      .poll(async () => readInspectorActivityCount(page))
+      .toBeGreaterThan(beforeActivityCount)
+    await expect(inspectorActiveBlockId(page)).toHaveAttribute(
+      'data-vetra-inspector-active-block-id',
+      blockId,
+    )
+    await expect(
+      page.getByRole('list', { name: 'Activity log' }).locator('li').first(),
+    ).toContainText('Editor document changed')
+  })
+
   test('pastes plain text into multiple blocks and updates the serialized document', async ({
     page,
   }) => {
@@ -288,8 +362,20 @@ function blockPlusButton(page: Page, blockId: string): Locator {
   )
 }
 
+function blockDragHandle(page: Page, blockId: string): Locator {
+  return page.locator(`[data-vetra-block-drag-handle="${blockId}"]`)
+}
+
 function activeInlineEditor(page: Page): Locator {
   return page.locator('.vetra-inline-editor[contenteditable="true"]')
+}
+
+function sortableBlock(page: Page, blockId: string): Locator {
+  return page.locator(`[data-vetra-sortable-block="${blockId}"]`)
+}
+
+function sortableDragLayer(page: Page, blockId: string): Locator {
+  return page.locator(`[data-vetra-sortable-drag-layer="${blockId}"]`)
 }
 
 function editorRoot(page: Page): Locator {
@@ -298,6 +384,10 @@ function editorRoot(page: Page): Locator {
 
 function virtualList(page: Page): Locator {
   return page.locator('.vetra-virtual-list')
+}
+
+function inspectorActiveBlockId(page: Page): Locator {
+  return page.locator('[data-vetra-inspector-active-block-id]')
 }
 
 async function activateBlock(page: Page, blockId: string): Promise<void> {
@@ -394,6 +484,66 @@ async function readLocatorTop(locator: Locator): Promise<number> {
   }
 
   return box.y
+}
+
+interface LocatorBox {
+  readonly height: number
+  readonly width: number
+  readonly x: number
+  readonly y: number
+}
+
+async function readLocatorBox(locator: Locator): Promise<LocatorBox> {
+  const box = await locator.boundingBox()
+
+  if (box === null) {
+    throw new Error('Expected locator to have a bounding box.')
+  }
+
+  return box
+}
+
+async function readInlineStyleTransform(locator: Locator): Promise<string> {
+  return locator.evaluate((node) => {
+    if (!(node instanceof HTMLElement)) {
+      throw new Error('Expected locator to resolve to an HTMLElement.')
+    }
+
+    return node.style.transform
+  })
+}
+
+async function readInspectorDocumentVersion(page: Page): Promise<number> {
+  return readNumberAttribute(page.locator('[data-vetra-inspector-document-version]'), {
+    attribute: 'data-vetra-inspector-document-version',
+    label: 'inspector document version',
+  })
+}
+
+async function readInspectorActivityCount(page: Page): Promise<number> {
+  return readNumberAttribute(page.locator('[data-vetra-inspector-activity-count]'), {
+    attribute: 'data-vetra-inspector-activity-count',
+    label: 'inspector activity count',
+  })
+}
+
+async function readNumberAttribute(
+  locator: Locator,
+  options: { readonly attribute: string; readonly label: string },
+): Promise<number> {
+  const rawValue = await locator.getAttribute(options.attribute)
+
+  if (rawValue === null) {
+    throw new Error(`Expected ${options.label} attribute to be present.`)
+  }
+
+  const parsedValue = Number.parseInt(rawValue, 10)
+
+  if (Number.isNaN(parsedValue)) {
+    throw new Error(`Expected ${options.label} attribute to be numeric.`)
+  }
+
+  return parsedValue
 }
 
 async function waitForSerializedDocument(

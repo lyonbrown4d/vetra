@@ -39,6 +39,10 @@ export function useSlashMenu(options: UseSlashMenuOptions): SlashMenuController 
   const activeItem = items[activeIndex]
 
   useEffect(() => {
+    setActiveIndexState(0)
+  }, [query])
+
+  useEffect(() => {
     setActiveIndexState((currentIndex) => {
       if (items.length === 0) {
         return 0

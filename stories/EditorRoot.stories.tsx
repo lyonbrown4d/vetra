@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import React, { useMemo } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { basicBlocks } from '@vetra/blocks-basic/react'
 import {
   createCodeBlock,
@@ -51,6 +51,61 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const editorClassName = 'vetra-editor-root vetra-story-editor'
+
+const acceptanceLayoutStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 320px)',
+  gap: 16,
+  height: 'min(760px, calc(100vh - 130px))',
+  minHeight: 520,
+}
+
+const acceptanceEditorFrameStyle: React.CSSProperties = {
+  minHeight: 0,
+  overflow: 'hidden',
+  border: '1px solid #e5e7eb',
+  borderRadius: 6,
+  background: '#ffffff',
+}
+
+const acceptancePanelStyle: React.CSSProperties = {
+  display: 'grid',
+  alignContent: 'start',
+  gap: 12,
+  minHeight: 0,
+  overflow: 'auto',
+  border: '1px solid #e5e7eb',
+  borderRadius: 6,
+  background: '#ffffff',
+  padding: 12,
+}
+
+const acceptanceStatsStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  gap: 8,
+  margin: 0,
+}
+
+const acceptanceStatItemStyle: React.CSSProperties = {
+  border: '1px solid #e5e7eb',
+  borderRadius: 6,
+  background: '#f9fafb',
+  padding: 8,
+}
+
+const acceptanceLabelStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 11,
+}
+
+const acceptanceValueStyle: React.CSSProperties = {
+  margin: '2px 0 0',
+  color: '#111827',
+  fontSize: 15,
+  fontWeight: 700,
+  overflowWrap: 'anywhere',
+}
 
 const defaultDocument = createDocument({
   id: 'storybook-default',
@@ -284,16 +339,83 @@ export const NotionLikeInteractions: Story = {
     docs: {
       description: {
         story:
-          'Covers the interactive editor surface for slash menu keyboard flow, gutter plus insertion, and root-level drag handles.',
+          'Playground-like acceptance story for slash menu keyboard flow, gutter plus insertion, root-level drag handles, and document version observation.',
       },
     },
   },
+  render: () => <StoryPlaygroundAcceptanceHarness initialValue={notionLikeInteractionsDocument} />,
 }
 
 interface StoryEditorHarnessProps {
   readonly className: string
   readonly initialSelection?: DocumentSelection
   readonly initialValue: DocumentState
+}
+
+interface StoryPlaygroundAcceptanceHarnessProps {
+  readonly initialValue: DocumentState
+}
+
+function StoryPlaygroundAcceptanceHarness(props: StoryPlaygroundAcceptanceHarnessProps) {
+  const [document, setDocument] = useState<DocumentState>(props.initialValue)
+  const [activityCount, setActivityCount] = useState(0)
+  const blockCount = Math.max(0, Object.keys(document.blocks).length - 1)
+  const rootBlockCount = document.children[document.rootId]?.length ?? 0
+  const handleChange = useCallback((nextDocument: DocumentState) => {
+    setDocument(nextDocument)
+    setActivityCount((current) => current + 1)
+  }, [])
+
+  return (
+    <div style={acceptanceLayoutStyle}>
+      <section aria-label="Editor acceptance surface" style={acceptanceEditorFrameStyle}>
+        <EditorRoot
+          blocks={basicBlocks}
+          className={editorClassName}
+          initialValue={props.initialValue}
+          onChange={handleChange}
+        />
+      </section>
+      <aside aria-label="Playground interaction acceptance" style={acceptancePanelStyle}>
+        <header>
+          <p className="vetra-storybook-eyebrow">Playground-like acceptance</p>
+          <h2 style={{ fontSize: 15, margin: '2px 0 0' }}>Runtime inspector preview</h2>
+        </header>
+        <dl aria-label="Story document activity" style={acceptanceStatsStyle}>
+          <div style={acceptanceStatItemStyle}>
+            <dt style={acceptanceLabelStyle}>Version</dt>
+            <dd style={acceptanceValueStyle}>{document.version}</dd>
+          </div>
+          <div style={acceptanceStatItemStyle}>
+            <dt style={acceptanceLabelStyle}>Changes</dt>
+            <dd style={acceptanceValueStyle}>{activityCount}</dd>
+          </div>
+          <div style={acceptanceStatItemStyle}>
+            <dt style={acceptanceLabelStyle}>Blocks</dt>
+            <dd style={acceptanceValueStyle}>{blockCount}</dd>
+          </div>
+          <div style={acceptanceStatItemStyle}>
+            <dt style={acceptanceLabelStyle}>Root</dt>
+            <dd style={acceptanceValueStyle}>{rootBlockCount}</dd>
+          </div>
+        </dl>
+        <dl aria-label="Interaction acceptance checklist" className="vetra-demo-shortcuts">
+          <div>
+            <dt>/</dt>
+            <dd>Open slash menu from the active inline editor.</dd>
+          </div>
+          <div>
+            <dt>+</dt>
+            <dd>Insert a paragraph from the gutter and keep focus in the new block.</dd>
+          </div>
+          <div>
+            <dt>Drag</dt>
+            <dd>Move root-level blocks with visible drop feedback.</dd>
+          </div>
+        </dl>
+      </aside>
+    </div>
+  )
 }
 
 function StoryEditorHarness(props: StoryEditorHarnessProps) {

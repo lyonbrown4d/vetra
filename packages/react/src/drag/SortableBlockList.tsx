@@ -155,13 +155,6 @@ export function SortableBlock(props: SortableBlockProps) {
     transform,
     transition,
   } = sortable
-  const setMeasuredNodeRef = useCallback(
-    (element: HTMLDivElement | null) => {
-      setNodeRef(element)
-      measureElement(element)
-    },
-    [measureElement, setNodeRef],
-  )
   const dragHandle = useMemo<BlockDragHandleState>(
     () => ({
       attributes,
@@ -174,12 +167,13 @@ export function SortableBlock(props: SortableBlockProps) {
     [attributes, blockId, isDragging, listeners, setActivatorNodeRef],
   )
   const dragState = useBlockDropTarget()
-  const style = createSortableBlockStyle(start, transform, transition)
+  const virtualItemStyle = createVirtualSortableBlockItemStyle(start)
+  const sortableStyle = createSortableBlockStyle(transform, transition)
   const isDropTarget = dragState.overBlockId === blockId
   const isTailDropTarget = dragState.overTail && isLast
 
   if (isDragging) {
-    style.zIndex = 1
+    sortableStyle.zIndex = 1
   }
 
   return (
@@ -193,10 +187,18 @@ export function SortableBlock(props: SortableBlockProps) {
         data-vetra-dragging={isDragging ? 'true' : 'false'}
         data-vetra-sortable-block={blockId}
         key={blockId}
-        ref={setMeasuredNodeRef}
-        style={style}
+        ref={measureElement}
+        style={virtualItemStyle}
       >
-        {children}
+        <div
+          className="vetra-sortable-block"
+          data-vetra-sortable-drag-layer={blockId}
+          data-vetra-dragging={isDragging ? 'true' : 'false'}
+          ref={setNodeRef}
+          style={sortableStyle}
+        >
+          {children}
+        </div>
       </div>
     </BlockDragHandleProvider>
   )
@@ -275,20 +277,24 @@ function resolveTopLevelDragOverTarget(
   return { overTail: false }
 }
 
+function createVirtualSortableBlockItemStyle(start: number): CSSProperties {
+  return {
+    left: 0,
+    position: 'absolute',
+    top: 0,
+    transform: `translateY(${String(start)}px)`,
+    width: '100%',
+  }
+}
+
 function createSortableBlockStyle(
-  start: number,
   sortableTransform: Parameters<typeof CSS.Transform.toString>[0],
   transition: string | undefined,
 ): CSSProperties {
   const transform = CSS.Transform.toString(sortableTransform)
   const style: CSSProperties = {
-    left: 0,
-    position: 'absolute',
-    top: 0,
-    transform:
-      transform === undefined
-        ? `translateY(${String(start)}px)`
-        : `translateY(${String(start)}px) ${transform}`,
+    position: 'relative',
+    transform,
     width: '100%',
   }
 
