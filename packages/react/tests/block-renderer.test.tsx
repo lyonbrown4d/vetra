@@ -123,6 +123,32 @@ describe('BlockRenderer active lifecycle', () => {
     }
   })
 
+  it('switches to active renderer when Enter is pressed on a readonly block shell', () => {
+    const editorDocument = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'A')],
+    })
+    const editor = createEditor(createEditorState(editorDocument))
+    const rendered = renderBlockRenderer(editor, [paragraphPlugin], 'block-a')
+
+    try {
+      const shell = rendered.container.querySelector('[data-vetra-block-shell="block-a"]')
+      if (shell === null) {
+        throw new Error('Expected block shell to render.')
+      }
+
+      act(() => {
+        shell.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+      })
+
+      expect(editor.getState().selection).toEqual({ type: 'block', blockId: 'block-a' })
+      expect(rendered.container.textContent).toContain('active:A')
+      expect(rendered.container.textContent).not.toContain('readonly:A')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
   it('keeps the unknown block fallback when no renderer is registered', () => {
     const unknownBlock: DocBlock = {
       id: 'unknown-a',

@@ -1,5 +1,5 @@
 import { autoUpdate, flip, offset, shift, size, useFloating } from '@floating-ui/react'
-import { useEffect, useId, useMemo, type CSSProperties } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, type CSSProperties } from 'react'
 import { useSlashMenu, type UseSlashMenuOptions } from '@vetra/react/menu/useSlashMenu'
 
 export interface SlashMenuProps extends UseSlashMenuOptions {
@@ -7,14 +7,16 @@ export interface SlashMenuProps extends UseSlashMenuOptions {
   readonly emptyLabel?: string
   readonly ariaLabel?: string
   readonly anchorElement?: HTMLElement | null
+  readonly autoFocus?: boolean
 }
 
 export function SlashMenu(props: SlashMenuProps) {
   const menu = useSlashMenu(props)
   const menuId = useId()
+  const floatingElementRef = useRef<HTMLDivElement | null>(null)
   const className = props.className ?? 'vetra-slash-menu'
   const anchorElement = props.anchorElement
-  const anchored = anchorElement !== undefined
+  const anchored = anchorElement !== undefined && anchorElement !== null
   const middleware = useMemo(
     () => [
       offset({ mainAxis: 8, alignmentAxis: -2 }),
@@ -48,27 +50,40 @@ export function SlashMenu(props: SlashMenuProps) {
     : undefined
   const activeItemId =
     menu.activeItem === undefined ? undefined : createItemElementId(menuId, menu.activeItem.id)
+  const setFloatingElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      floatingElementRef.current = element
+      refs.setFloating(element)
+    },
+    [refs],
+  )
 
   useEffect(() => {
     if (!anchored) {
       return
     }
 
-    refs.setReference(anchorElement ?? null)
-
-    if (anchorElement !== null) {
-      update()
-    }
+    refs.setReference(anchorElement)
+    update()
   }, [anchorElement, anchored, refs, update])
+
+  useEffect(() => {
+    if (props.autoFocus !== true) {
+      return
+    }
+
+    floatingElementRef.current?.focus({ preventScroll: true })
+  }, [props.autoFocus])
 
   return (
     <div
       aria-activedescendant={activeItemId}
       aria-label={props.ariaLabel ?? 'Slash menu'}
+      autoFocus={props.autoFocus}
       className={className}
       data-floating={anchored ? 'true' : 'false'}
       data-vetra-slash-menu=""
-      ref={anchored ? refs.setFloating : undefined}
+      ref={anchored ? setFloatingElement : undefined}
       onKeyDown={menu.handleKeyDown}
       role="menu"
       style={floatingStyle}

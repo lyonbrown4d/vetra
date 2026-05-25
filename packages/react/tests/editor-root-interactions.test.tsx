@@ -178,6 +178,19 @@ function pressEditorKey(container: Element, key: string, options: PressKeyOption
   })
 }
 
+function pressActiveElementKey(key: string, options: PressKeyOptions = {}): void {
+  const activeElement = document.activeElement
+  if (!(activeElement instanceof HTMLElement)) {
+    throw new Error('Expected an active element to receive keyboard input.')
+  }
+
+  act(() => {
+    activeElement.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key, ...options }),
+    )
+  })
+}
+
 function expectBlockSelected(container: Element, blockId: string, selected: boolean): void {
   expect(getBlockShell(container, blockId).dataset.selected).toBe(selected ? 'true' : 'false')
 }
@@ -218,6 +231,11 @@ function getSlashMenu(container: Element): HTMLElement {
   }
 
   return menu
+}
+
+function querySlashMenu(container: Element): HTMLElement | null {
+  const menu = container.querySelector('[data-vetra-slash-menu]')
+  return menu instanceof HTMLElement ? menu : null
 }
 
 describe('EditorRoot integrated interactions', () => {
@@ -275,6 +293,7 @@ describe('EditorRoot integrated interactions', () => {
 
       expect(slashMenu.dataset.floating).toBe('true')
       expect(slashMenu.style.position).toBe('fixed')
+      expect(document.activeElement).toBe(slashMenu)
 
       act(() => {
         getButton(rendered.container, '[data-vetra-slash-menu-item="quote"]').dispatchEvent(
@@ -293,7 +312,45 @@ describe('EditorRoot integrated interactions', () => {
     }
   })
 
-  it('inserts an empty paragraph from the block gutter plus button and activates it', () => {
+  it('navigates the focused slash menu with the keyboard and inserts the selected block', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor'), paragraph('block-b', 'Next')],
+      }),
+    )
+
+    try {
+      clickBlock(rendered.container, 'block-a')
+      pressEditorKey(rendered.container, '/')
+      const slashMenu = getSlashMenu(rendered.container)
+
+      expect(document.activeElement).toBe(slashMenu)
+
+      pressActiveElementKey('ArrowDown')
+      expect(
+        getButton(rendered.container, '[data-vetra-slash-menu-item="heading"]').dataset.active,
+      ).toBe('true')
+
+      pressActiveElementKey('Enter')
+
+      const rootChildren = rendered.latestDocument.children.root ?? []
+      const insertedBlockId = rootChildren[1]
+
+      expect(rootChildren).toHaveLength(3)
+      expect(insertedBlockId).toBeDefined()
+      expect(rendered.latestDocument.blocks[expectDefined(insertedBlockId)]).toMatchObject({
+        id: insertedBlockId,
+        type: 'heading',
+        props: { level: 2 },
+      })
+      expect(querySlashMenu(rendered.container)).toBeNull()
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('inserts an empty paragraph from the block gutter plus button and activates it', async () => {
     const rendered = renderEditor(
       createDocument({
         id: 'doc',
@@ -322,6 +379,8 @@ describe('EditorRoot integrated interactions', () => {
       expect(getBlockShell(rendered.container, expectDefined(insertedBlockId)).dataset.active).toBe(
         'true',
       )
+      await waitForScheduledFocus()
+      expect(document.activeElement).toBe(getActiveEditableBlock(rendered.container))
     } finally {
       rendered.cleanup()
     }
@@ -497,6 +556,44 @@ describe('EditorRoot integrated interactions', () => {
     }
   })
 
+  it('selects all top-level blocks from a shell key command and keeps shell focus', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [
+          paragraph('block-a', 'First'),
+          paragraph('block-b', 'Second'),
+          paragraph('block-c', 'Third'),
+        ],
+      }),
+    )
+
+    try {
+      act(() => {
+        getBlockShell(rendered.container, 'block-b').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(
+          new KeyboardEvent('keydown', {
+            bubbles: true,
+            cancelable: true,
+            ctrlKey: true,
+            key: 'a',
+          }),
+        )
+      })
+
+      expectBlockShellState(rendered.container, 'block-a', { active: false, selected: true })
+      expectBlockShellState(rendered.container, 'block-b', { active: false, selected: true })
+      expectBlockShellState(rendered.container, 'block-c', { active: false, selected: true })
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
   it('pastes plain text after the active block', () => {
     const rendered = renderEditor(
       createDocument({
@@ -524,6 +621,40 @@ describe('EditorRoot integrated interactions', () => {
       expect(
         readInlineText(rendered.latestDocument.blocks[expectDefined(rootChildren[2])]?.content),
       ).toBe('Second')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('closes the slash menu when clicking another block', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor'), paragraph('block-b', 'Next')],
+      }),
+    )
+
+    try {
+      act(() => {
+        getBlockShell(rendered.container, 'block-a').dispatchEvent(
+          new MouseEvent('click', { bubbles: true, cancelable: true }),
+        )
+      })
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(
+          new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: '/' }),
+        )
+      })
+
+      expect(querySlashMenu(rendered.container)).not.toBeNull()
+
+      act(() => {
+        getBlockShell(rendered.container, 'block-b').dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, cancelable: true }),
+        )
+      })
+
+      expect(querySlashMenu(rendered.container)).toBeNull()
     } finally {
       rendered.cleanup()
     }
@@ -672,6 +803,21 @@ function createClipboardEvent(
   })
 
   return event as ClipboardEvent
+}
+
+async function waitForScheduledFocus(): Promise<void> {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      if (typeof globalThis.requestAnimationFrame === 'function') {
+        globalThis.requestAnimationFrame(() => {
+          resolve()
+        })
+        return
+      }
+
+      globalThis.setTimeout(resolve, 0)
+    })
+  })
 }
 
 function readBlockText(block: DocBlock): string {

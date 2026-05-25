@@ -154,6 +154,35 @@ describe('SlashMenu', () => {
     }
   })
 
+  it('confirms with Tab and jumps with Home/End', () => {
+    const editor = createEditorWithTwoBlocks()
+    const rendered = renderSlashMenu(editor, {
+      mode: 'insert-after',
+      idFactory: () => 'home-end',
+    })
+
+    try {
+      const menu = getSlashMenu(rendered.container)
+
+      dispatchKeyboardEvent(menu, 'Home')
+      expect(getMenuItem(rendered.container, 'paragraph').dataset.active).toBe('true')
+
+      dispatchKeyboardEvent(menu, 'End')
+      expect(getMenuItem(rendered.container, 'divider').dataset.active).toBe('true')
+
+      dispatchKeyboardEvent(menu, 'Tab')
+
+      const document = editor.getState().document
+      expect(document.children[document.rootId]).toEqual(['block-a', 'home-end', 'block-b'])
+      expect(document.blocks['home-end']).toMatchObject({
+        id: 'home-end',
+        type: 'divider',
+      })
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
   it('closes on Escape without dispatching a document command', () => {
     const editor = createEditorWithTwoBlocks()
     const beforeDocument = editor.getState().document

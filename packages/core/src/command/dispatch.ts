@@ -2,10 +2,7 @@ import { err, ok, type Result } from '@vetra/core/result'
 import type { Transaction } from '@vetra/core/transaction/types'
 import { noneSelection } from '@vetra/core/selection/types'
 import type { DocumentSelection } from '@vetra/core/selection/types'
-import {
-  getSelectedBlockIds,
-  getSelectionReferencedBlockIds,
-} from '@vetra/core/selection/helpers'
+import { getSelectedBlockIds, getSelectionReferencedBlockIds } from '@vetra/core/selection/helpers'
 import type { BlockId, DocBlock, DocumentState } from '@vetra/core/document/types'
 import {
   collectSubtreeIds,
@@ -1075,11 +1072,7 @@ function mergeBlock(
         children,
         version: document.version + 1,
       },
-      selection: selectionTouchesAny(
-        document,
-        state.selection,
-        new Set([command.sourceBlockId]),
-      )
+      selection: selectionTouchesAny(document, state.selection, new Set([command.sourceBlockId]))
         ? noneSelection
         : state.selection,
     },

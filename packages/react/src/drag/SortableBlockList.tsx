@@ -1,12 +1,13 @@
-import { useCallback, useMemo, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useMemo, type CSSProperties, type ReactNode, useState } from 'react'
 import {
   closestCenter,
   DndContext,
   KeyboardSensor,
   PointerSensor,
+  type DragOverEvent,
+  type DragEndEvent,
   useSensor,
   useSensors,
-  type DragEndEvent,
   type UniqueIdentifier,
 } from '@dnd-kit/core'
 import {
@@ -22,6 +23,12 @@ import {
   BlockDragHandleProvider,
   type BlockDragHandleState,
 } from '@vetra/react/drag/BlockDragHandleContext'
+import {
+  BlockDropTargetProvider,
+  useBlockDropTarget,
+} from '@vetra/react/drag/BlockDropTargetContext'
+
+const TAIL_DROP_TARGET_ID = '__vetra-tail__'
 
 export interface SortableBlockListProps {
   readonly blockIds: readonly BlockId[]
@@ -34,6 +41,7 @@ export interface SortableBlockProps {
   readonly blockId: BlockId
   readonly children: ReactNode
   readonly index: number
+  readonly isLast: boolean
   readonly measureElement: (element: HTMLDivElement | null) => void
   readonly start: number
 }
@@ -46,9 +54,16 @@ export interface ResolveTopLevelBlockDragMoveInput {
   readonly topLevelBlockIds: readonly BlockId[]
 }
 
+interface BlockDragStateContextValue {
+  readonly overBlockId: BlockId | undefined
+  readonly overTail: boolean
+}
+
 export function SortableBlockList(props: SortableBlockListProps) {
   const editor = useEditor()
   const sortableItems = useMemo(() => [...props.sortableBlockIds], [props.sortableBlockIds])
+  const [overBlockId, setOverBlockId] = useState<BlockId | undefined>(undefined)
+  const [overTail, setOverTail] = useState(false)
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -62,9 +77,19 @@ export function SortableBlockList(props: SortableBlockListProps) {
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
+      setOverBlockId(undefined)
+      setOverTail(false)
+      const resolvedOverId = resolveTopLevelDragOverTarget(
+        event.over?.id,
+        event.active.id,
+        props.sortableBlockIds,
+        props.blockIds,
+        event.delta.y > 0,
+      )
+
       const command = resolveTopLevelBlockDragMove({
         activeId: event.active.id,
-        overId: event.over?.id ?? null,
+        overId: resolvedOverId.overTail ? TAIL_DROP_TARGET_ID : (resolvedOverId.blockId ?? null),
         rootId: props.rootId,
         sortableBlockIds: props.sortableBlockIds,
         topLevelBlockIds: props.blockIds,
@@ -77,17 +102,49 @@ export function SortableBlockList(props: SortableBlockListProps) {
     [editor, props.blockIds, props.rootId, props.sortableBlockIds],
   )
 
+  const handleDragOver = useCallback(
+    (event: DragOverEvent) => {
+      const isMovingDown = event.delta.y > 0
+      const resolvedOverId = resolveTopLevelDragOverTarget(
+        event.over?.id,
+        event.active.id,
+        props.sortableBlockIds,
+        props.blockIds,
+        isMovingDown,
+      )
+      setOverBlockId(resolvedOverId.blockId)
+      setOverTail(resolvedOverId.overTail)
+    },
+    [props.blockIds, props.sortableBlockIds],
+  )
+
+  const blockDropTargetValue = useMemo<BlockDragStateContextValue>(
+    () => ({ overBlockId, overTail }),
+    [overBlockId, overTail],
+  )
+
   return (
-    <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd} sensors={sensors}>
+    <DndContext
+      collisionDetection={closestCenter}
+      onDragOver={handleDragOver}
+      onDragCancel={() => {
+        setOverBlockId(undefined)
+        setOverTail(false)
+      }}
+      onDragEnd={handleDragEnd}
+      sensors={sensors}
+    >
       <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
-        {props.children}
+        <BlockDropTargetProvider value={blockDropTargetValue}>
+          {props.children}
+        </BlockDropTargetProvider>
       </SortableContext>
     </DndContext>
   )
 }
 
 export function SortableBlock(props: SortableBlockProps) {
-  const { blockId, children, index, measureElement, start } = props
+  const { blockId, children, index, isLast, measureElement, start } = props
   const sortable = useSortable({ id: blockId })
   const {
     attributes,
@@ -116,7 +173,10 @@ export function SortableBlock(props: SortableBlockProps) {
     }),
     [attributes, blockId, isDragging, listeners, setActivatorNodeRef],
   )
+  const dragState = useBlockDropTarget()
   const style = createSortableBlockStyle(start, transform, transition)
+  const isDropTarget = dragState.overBlockId === blockId
+  const isTailDropTarget = dragState.overTail && isLast
 
   if (isDragging) {
     style.zIndex = 1
@@ -128,6 +188,8 @@ export function SortableBlock(props: SortableBlockProps) {
         className="vetra-virtual-list__item"
         data-block-id={blockId}
         data-index={index}
+        data-vetra-drag-over={isDropTarget ? 'true' : 'false'}
+        data-vetra-drag-tail-over={isTailDropTarget ? 'true' : 'false'}
         data-vetra-dragging={isDragging ? 'true' : 'false'}
         data-vetra-sortable-block={blockId}
         key={blockId}
@@ -151,14 +213,24 @@ export function resolveTopLevelBlockDragMove(
     return undefined
   }
 
-  if (
-    !input.sortableBlockIds.includes(input.activeId) ||
-    !input.sortableBlockIds.includes(input.overId)
-  ) {
+  if (!input.sortableBlockIds.includes(input.activeId)) {
     return undefined
   }
 
   if (!input.topLevelBlockIds.includes(input.activeId)) {
+    return undefined
+  }
+
+  if (input.overId === TAIL_DROP_TARGET_ID) {
+    return {
+      type: 'moveBlock',
+      blockId: input.activeId,
+      toParentId: input.rootId,
+      toIndex: input.topLevelBlockIds.length,
+    }
+  }
+
+  if (!input.sortableBlockIds.includes(input.overId)) {
     return undefined
   }
 
@@ -173,6 +245,34 @@ export function resolveTopLevelBlockDragMove(
     toParentId: input.rootId,
     toIndex,
   }
+}
+
+interface ResolvedTopLevelDragOverTarget {
+  readonly blockId?: BlockId
+  readonly overTail: boolean
+}
+
+function resolveTopLevelDragOverTarget(
+  overId: UniqueIdentifier | undefined,
+  activeId: UniqueIdentifier,
+  sortableBlockIds: readonly BlockId[],
+  topLevelBlockIds: readonly BlockId[],
+  isMovingDown: boolean,
+): ResolvedTopLevelDragOverTarget {
+  if (typeof overId !== 'string' || typeof activeId !== 'string') {
+    return { overTail: false }
+  }
+
+  const lastBlockId = topLevelBlockIds.at(-1)
+  if (isMovingDown && overId !== activeId && overId === lastBlockId) {
+    return { overTail: true }
+  }
+
+  if (sortableBlockIds.includes(overId)) {
+    return { blockId: overId, overTail: false }
+  }
+
+  return { overTail: false }
 }
 
 function createSortableBlockStyle(

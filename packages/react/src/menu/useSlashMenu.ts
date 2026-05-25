@@ -94,6 +94,21 @@ export function useSlashMenu(options: UseSlashMenuOptions): SlashMenuController 
           event.stopPropagation()
           setActiveIndex(activeIndex - 1)
           break
+        case 'Tab':
+          event.preventDefault()
+          event.stopPropagation()
+          selectActiveItem()
+          break
+        case 'Home':
+          event.preventDefault()
+          event.stopPropagation()
+          setActiveIndex(0)
+          break
+        case 'End':
+          event.preventDefault()
+          event.stopPropagation()
+          setActiveIndex(items.length - 1)
+          break
         case 'Enter':
           event.preventDefault()
           event.stopPropagation()

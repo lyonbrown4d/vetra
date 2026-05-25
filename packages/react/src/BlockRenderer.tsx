@@ -6,6 +6,7 @@ import { useBlockRegistry } from '@vetra/react/EditorProvider'
 import { useActiveBlockLifecycle } from '@vetra/react/hooks/useActiveBlockLifecycle'
 import { useBlock } from '@vetra/react/hooks/useBlock'
 import { useMountedBlockRegistration } from '@vetra/react/hooks/useMountedBlockMetrics'
+import { focusBlockShellAfterRender } from '@vetra/react/focus'
 import { extendBlockSelectionToBlock } from '@vetra/react/selection/keyboardNavigation'
 
 export interface BlockRendererRootProps {
@@ -46,8 +47,9 @@ export function BlockRenderer(props: BlockRendererRootProps) {
 
       event.preventDefault()
       blockLifecycle.selectBlock()
+      focusBlockShellAfterRender(event.currentTarget, props.blockId)
     },
-    [blockLifecycle],
+    [blockLifecycle, props.blockId],
   )
 
   if (block === undefined) {

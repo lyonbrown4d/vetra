@@ -6,6 +6,7 @@ import {
   useState,
   type ClipboardEvent,
   type KeyboardEvent,
+  type PointerEvent,
 } from 'react'
 import {
   createEditor,
@@ -35,6 +36,7 @@ import {
   selectAllTopLevelBlocks,
   undoEditorHistory,
 } from '@vetra/react/selection'
+import { focusBlockShell, focusBlockShellAfterRender, getBlockShell } from '@vetra/react/focus'
 import { VirtualBlockList } from '@vetra/react/VirtualBlockList'
 import type { AnyReactBlockPlugin } from '@vetra/react/renderer/types'
 
@@ -97,6 +99,33 @@ function EditorSurface(props: EditorSurfaceProps) {
     setSlashMenuState(null)
   }, [])
 
+  const handlePointerDownCapture = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (slashMenuState === null) {
+        return
+      }
+
+      const menuElement = surfaceRef.current?.querySelector<HTMLElement>(
+        '[data-vetra-slash-menu=""][data-floating]',
+      )
+
+      if (menuElement === undefined || menuElement === null || !isNodeTarget(event.target)) {
+        return
+      }
+
+      if (menuElement.contains(event.target) || menuElement === event.target) {
+        return
+      }
+
+      if (getBlockShell(surfaceRef.current, slashMenuState.targetBlockId)?.contains(event.target)) {
+        return
+      }
+
+      closeSlashMenu()
+    },
+    [closeSlashMenu, slashMenuState],
+  )
+
   const handleKeyDownCapture = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       if (
@@ -104,7 +133,7 @@ function EditorSurface(props: EditorSurfaceProps) {
         slashMenuState === null &&
         isSelectAllBlocksShortcut(event) &&
         !isTextInputElement(event.target) &&
-        !isLexicalActiveEditorTarget(event.target)
+        (!isLexicalActiveEditorTarget(event.target) || hasMultipleTopLevelBlocks(editor))
       ) {
         event.preventDefault()
         event.stopPropagation()
@@ -379,6 +408,7 @@ function EditorSurface(props: EditorSurfaceProps) {
   return (
     <div
       className={props.className ?? 'vetra-editor-root'}
+      onPointerDownCapture={handlePointerDownCapture}
       onKeyDown={handleKeyDown}
       onKeyDownCapture={handleKeyDownCapture}
       onCopy={handleCopy}
@@ -390,6 +420,7 @@ function EditorSurface(props: EditorSurfaceProps) {
       {slashMenuState === null ? null : (
         <SlashMenu
           anchorElement={slashMenuAnchorElement}
+          autoFocus
           className="vetra-slash-menu"
           idFactory={() => createAvailableBlockId(editor, 'slash')}
           mode="insert-after"
@@ -477,6 +508,13 @@ function isSelectAllBlocksShortcut(event: KeyboardEvent<HTMLElement>): boolean {
   return hasPrimaryShortcutModifier(event) && !event.shiftKey && event.key.toLowerCase() === 'a'
 }
 
+function hasMultipleTopLevelBlocks(editor: EditorRuntime): boolean {
+  const state = editor.getState()
+  const rootBlocks = state.document.children[state.document.rootId] ?? []
+
+  return rootBlocks.length > 1
+}
+
 function isComposingKeyEvent(event: KeyboardEvent<HTMLElement>): boolean {
   return event.nativeEvent.isComposing || event.key === 'Process'
 }
@@ -490,6 +528,10 @@ function isTextEditingElement(target: EventTarget): boolean {
     target instanceof HTMLElement &&
     (target.isContentEditable || target.closest('[contenteditable="true"]') !== null)
   )
+}
+
+function isNodeTarget(target: EventTarget): target is Node {
+  return target instanceof Node
 }
 
 function resolveSlashMenuTargetAnchor(
@@ -528,24 +570,6 @@ function resolveSlashMenuAnchor(
   return getBlockShell(root, state.targetBlockId) ?? root
 }
 
-function getBlockShell(root: HTMLElement | null, blockId: BlockId): HTMLElement | undefined {
-  if (root === null) {
-    return undefined
-  }
-
-  for (const element of root.querySelectorAll<HTMLElement>('[data-vetra-block-shell]')) {
-    if (element.dataset.vetraBlockShell === blockId) {
-      return element
-    }
-  }
-
-  return undefined
-}
-
-function focusBlockShell(root: HTMLElement | null, blockId: BlockId): void {
-  getBlockShell(root, blockId)?.focus()
-}
-
 function focusAfterPaste(
   editor: EditorRuntime,
   result: { readonly value: { readonly insertedBlockIds: readonly BlockId[] } },
@@ -557,6 +581,8 @@ function focusAfterPaste(
       type: 'setSelection',
       selection: { type: 'block', blockId: lastInsertedBlockId },
     })
-    focusBlockShell(root, lastInsertedBlockId)
+    if (root !== null) {
+      focusBlockShellAfterRender(root, lastInsertedBlockId)
+    }
   }
 }

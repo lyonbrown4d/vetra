@@ -9,11 +9,13 @@ import type {
   InlineContent,
   InlineMark,
   InlineNode,
-  BlockId,
   ParagraphBlock,
   QuoteBlock,
+  EditorRuntime,
 } from '@vetra/core'
 import { createEmptyInlineContent, findParentId, getBlockChildren } from '@vetra/core'
+import { focusBlockShellAfterRender } from '@vetra/react/focus'
+import { selectAllTopLevelBlocks } from '@vetra/react/selection'
 import { isInlineContent, type CodeBlock } from '@vetra/blocks-basic/blocks'
 
 export const basicBlocks: readonly AnyReactBlockPlugin[] = [
@@ -165,7 +167,7 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
               type: 'setSelection',
               selection: { type: 'block', blockId: previousBlock.id },
             })
-            focusActiveBlockEditorAfterRender(activeBlockRootRef.current, previousBlock.id)
+            focusBlockShellAfterRender(activeBlockRootRef.current, previousBlock.id)
           }
 
           return result.ok
@@ -188,7 +190,7 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
               type: 'setSelection',
               selection: { type: 'block', blockId: afterBlockId },
             })
-            focusActiveBlockEditorAfterRender(activeBlockRootRef.current, afterBlockId)
+            focusBlockShellAfterRender(activeBlockRootRef.current, afterBlockId)
           }
 
           return result.ok
@@ -196,7 +198,7 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
         onUndo={() => props.editor.undo().ok}
         onRedo={() => props.editor.redo().ok}
         onSelectAll={() => {
-          return selectAllInActiveBlock(activeBlockRootRef.current)
+          return trySelectAllInActiveDocumentOrBlock(activeBlockRootRef.current, props.editor)
         }}
         placeholder="Type..."
         value={value}
@@ -265,7 +267,17 @@ function createRandomIdSegment(): string {
   return globalThis.crypto.randomUUID()
 }
 
-function selectAllInActiveBlock(root: HTMLElement | null): boolean {
+function trySelectAllInActiveDocumentOrBlock(
+  root: HTMLElement | null,
+  editor: EditorRuntime,
+): boolean {
+  const editorDocument = editor.getState().document
+  const topLevelBlockIds = getBlockChildren(editorDocument, editorDocument.rootId)
+
+  if (topLevelBlockIds.length > 1) {
+    return selectAllTopLevelBlocks(editor) !== undefined
+  }
+
   if (root === null || typeof globalThis.getSelection !== 'function') {
     return false
   }
@@ -281,57 +293,12 @@ function selectAllInActiveBlock(root: HTMLElement | null): boolean {
     return false
   }
 
-  const range = document.createRange()
-
+  const range = globalThis.document.createRange()
   range.selectNodeContents(editable)
   selection.removeAllRanges()
   selection.addRange(range)
 
   return true
-}
-
-function focusActiveBlockEditorAfterRender(anchor: HTMLElement | null, blockId: BlockId): void {
-  const root = anchor?.closest('.vetra-editor-root') ?? anchor?.ownerDocument ?? null
-
-  scheduleAfterRender(() => {
-    const blockShell = findBlockShell(root, blockId)
-    if (blockShell === undefined) {
-      return
-    }
-
-    const editable = blockShell.querySelector<HTMLElement>(
-      '.vetra-inline-editor[contenteditable="true"]',
-    )
-    if (editable !== null) {
-      editable.focus({ preventScroll: true })
-      return
-    }
-
-    blockShell.focus()
-  })
-}
-
-function scheduleAfterRender(callback: () => void): void {
-  if (typeof globalThis.requestAnimationFrame === 'function') {
-    requestAnimationFrame(callback)
-    return
-  }
-
-  globalThis.setTimeout(callback, 0)
-}
-
-function findBlockShell(root: ParentNode | null, blockId: BlockId): HTMLElement | undefined {
-  if (root === null) {
-    return undefined
-  }
-
-  for (const element of root.querySelectorAll<HTMLElement>('[data-vetra-block-shell]')) {
-    if (element.dataset.vetraBlockShell === blockId) {
-      return element
-    }
-  }
-
-  return undefined
 }
 
 function CodeActive(props: BlockRendererProps<CodeBlock>) {

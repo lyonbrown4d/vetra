@@ -40,11 +40,13 @@ export function VirtualBlockList(props: VirtualBlockListProps) {
     const renderer = <BlockRenderer blockId={blockId} />
 
     if (dragEnabled) {
+      const isLast = virtualItem.index === blockIds.length - 1
       return (
         <SortableBlock
           blockId={blockId}
           index={virtualItem.index}
           key={blockId}
+          isLast={isLast}
           measureElement={virtualizer.measureElement}
           start={virtualItem.start}
         >

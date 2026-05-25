@@ -164,6 +164,22 @@ const virtualizedDocument = createDocument({
   ],
 })
 
+const notionLikeInteractionsDocument = createDocument({
+  id: 'storybook-notion-like-interactions',
+  blocks: [
+    createHeadingBlock('notion-like-title', 2, 'Notion-like interaction baseline'),
+    createParagraphBlock('notion-like-body', 'Open / here, use the gutter plus, or drag blocks.'),
+    createQuoteBlock(
+      'notion-like-quote',
+      'The slash menu is fixed-positioned near the active block.',
+    ),
+    createParagraphBlock(
+      'notion-like-tail',
+      'Tail drop indicators only apply to the document tail.',
+    ),
+  ],
+})
+
 const selectAllLargeVirtualizedSelection: DocumentSelection = {
   type: 'range-block',
   anchorBlockId: 'virtualized-title',
@@ -255,6 +271,23 @@ export const SelectAllLargeVirtualized: Story = {
       initialValue={virtualizedDocument}
     />
   ),
+}
+
+export const NotionLikeInteractions: Story = {
+  args: {
+    blocks: basicBlocks,
+    className: editorClassName,
+    initialValue: notionLikeInteractionsDocument,
+  },
+  name: 'Notion-like interactions',
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Covers the interactive editor surface for slash menu keyboard flow, gutter plus insertion, and root-level drag handles.',
+      },
+    },
+  },
 }
 
 interface StoryEditorHarnessProps {

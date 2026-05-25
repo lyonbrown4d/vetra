@@ -28,13 +28,34 @@ interface MockDragEndEvent {
   readonly over: {
     readonly id: string | number
   } | null
+  readonly delta?: {
+    readonly x: number
+    readonly y: number
+  }
+}
+
+interface MockDragOverEvent {
+  readonly active: {
+    readonly id: string | number
+  }
+  readonly over: {
+    readonly id: string | number
+  } | null
+  readonly delta?: {
+    readonly x: number
+    readonly y: number
+  }
 }
 
 type MockDragEndHandler = (event: MockDragEndEvent) => void
+type MockDragOverHandler = (event: MockDragOverEvent) => void
+type MockDragCancelHandler = () => void
 
 interface MockDndContextProps {
   readonly children: ReactNode
   readonly onDragEnd?: MockDragEndHandler
+  readonly onDragOver?: MockDragOverHandler
+  readonly onDragCancel?: MockDragCancelHandler
 }
 
 interface MockSortableContextProps {
@@ -52,6 +73,8 @@ interface VirtualizerOptions {
 
 const dndMock = vi.hoisted(() => {
   let dragEndHandler: MockDragEndHandler | undefined
+  let dragOverHandler: MockDragOverHandler | undefined
+  let dragCancelHandler: MockDragCancelHandler | undefined
 
   return {
     dispatchDragEnd(event: MockDragEndEvent) {
@@ -59,13 +82,71 @@ const dndMock = vi.hoisted(() => {
         throw new Error('Expected DndContext to register onDragEnd.')
       }
 
-      dragEndHandler(event)
+      dragEndHandler({
+        ...event,
+        delta: event.delta ?? { x: 0, y: 0 },
+      })
+    },
+    dispatchDragOver(event: MockDragOverEvent) {
+      if (dragOverHandler === undefined) {
+        throw new Error('Expected DndContext to register onDragOver.')
+      }
+
+      dragOverHandler({
+        ...event,
+        delta: event.delta ?? { x: 0, y: 0 },
+      })
+    },
+    dispatchDragCancel() {
+      if (dragCancelHandler === undefined) {
+        return
+      }
+
+      dragCancelHandler()
     },
     reset() {
       dragEndHandler = undefined
+      dragOverHandler = undefined
+      dragCancelHandler = undefined
     },
     setDragEndHandler(handler: MockDragEndHandler | undefined) {
       dragEndHandler = handler
+    },
+    setDragOverHandler(handler: MockDragOverHandler | undefined) {
+      dragOverHandler = handler
+    },
+    setDragCancelHandler(handler: MockDragCancelHandler | undefined) {
+      dragCancelHandler = handler
+    },
+  }
+})
+
+const virtualizerMock = vi.hoisted(() => {
+  let rangeStart = 0
+  let rangeLength: number | undefined
+
+  return {
+    createVirtualItems(count: number) {
+      const itemCount = Math.max(0, Math.min(rangeLength ?? count, count - rangeStart))
+
+      return Array.from({ length: itemCount }, (_, offset) => {
+        const index = rangeStart + offset
+
+        return {
+          index,
+          key: index,
+          size: 48,
+          start: index * 48,
+        }
+      })
+    },
+    reset() {
+      rangeStart = 0
+      rangeLength = undefined
+    },
+    setRange(start: number, length: number) {
+      rangeStart = start
+      rangeLength = length
     },
   }
 })
@@ -73,6 +154,8 @@ const dndMock = vi.hoisted(() => {
 vi.mock('@dnd-kit/core', () => ({
   DndContext(props: MockDndContextProps) {
     dndMock.setDragEndHandler(props.onDragEnd)
+    dndMock.setDragOverHandler(props.onDragOver)
+    dndMock.setDragCancelHandler(props.onDragCancel)
 
     return <div data-vetra-test-dnd-context="">{props.children}</div>
   },
@@ -138,12 +221,7 @@ vi.mock('@tanstack/react-virtual', () => ({
         return options.count * 48
       },
       getVirtualItems() {
-        return Array.from({ length: options.count }, (_, index) => ({
-          index,
-          key: index,
-          size: 48,
-          start: index * 48,
-        }))
+        return virtualizerMock.createVirtualItems(options.count)
       },
       measureElement() {
         return undefined
@@ -208,6 +286,7 @@ function renderVirtualList(editor: EditorRuntime) {
       unmountRoot(root)
       container.remove()
       dndMock.reset()
+      virtualizerMock.reset()
     },
   }
 }
@@ -278,6 +357,23 @@ describe('resolveTopLevelBlockDragMove', () => {
       resolveTopLevelBlockDragMove({ ...baseInput, activeId: 1, overId: 'block-b' }),
     ).toBeUndefined()
   })
+
+  it('moves to the end when the over target is the visible tail block and cursor moves downward', () => {
+    expect(
+      resolveTopLevelBlockDragMove({
+        activeId: 'block-a',
+        overId: '__vetra-tail__',
+        rootId: 'root',
+        sortableBlockIds: ['block-a', 'block-b', 'block-c'],
+        topLevelBlockIds: ['block-a', 'block-b', 'block-c', 'block-d'],
+      }),
+    ).toEqual({
+      type: 'moveBlock',
+      blockId: 'block-a',
+      toParentId: 'root',
+      toIndex: 4,
+    })
+  })
 })
 
 describe('VirtualBlockList drag reorder', () => {
@@ -325,6 +421,167 @@ describe('VirtualBlockList drag reorder', () => {
         'block-b',
         'block-c',
         'block-a',
+      ])
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('marks the drag-over block as drop target and clears it after drag ends', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'A'), paragraph('block-b', 'B'), paragraph('block-c', 'C')],
+    })
+    const commands: EditorCommand[] = []
+    const recordingEditor = createRecordingEditor(
+      createEditor(createEditorState(document)),
+      commands,
+    )
+    const rendered = renderVirtualList(recordingEditor)
+
+    try {
+      act(() => {
+        dndMock.dispatchDragOver({
+          active: { id: 'block-a' },
+          over: { id: 'block-c' },
+        })
+      })
+
+      const dragTarget = rendered.container.querySelector<HTMLElement>(
+        '[data-vetra-sortable-block="block-c"]',
+      )
+      if (dragTarget === null) {
+        throw new Error('Expected block-c sortable item to render.')
+      }
+
+      expect(dragTarget.dataset.vetraDragOver).toBe('true')
+
+      expect(
+        rendered.container
+          .querySelector('[data-vetra-sortable-block="block-a"]')
+          ?.getAttribute('data-vetra-drag-over'),
+      ).toBe('false')
+
+      act(() => {
+        dndMock.dispatchDragCancel()
+      })
+
+      expect(
+        rendered.container
+          .querySelector('[data-vetra-sortable-block="block-c"]')
+          ?.getAttribute('data-vetra-drag-over'),
+      ).toBe('false')
+      expect(commands).toHaveLength(0)
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('switches the last block drop target to tail when moving down and emits a tail move command', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'A'), paragraph('block-b', 'B'), paragraph('block-c', 'C')],
+    })
+    const commands: EditorCommand[] = []
+    const recordingEditor = createRecordingEditor(
+      createEditor(createEditorState(document)),
+      commands,
+    )
+    const rendered = renderVirtualList(recordingEditor)
+
+    try {
+      act(() => {
+        dndMock.dispatchDragOver({
+          active: { id: 'block-a' },
+          delta: { x: 0, y: 20 },
+          over: { id: 'block-c' },
+        })
+      })
+
+      const dragTarget = rendered.container.querySelector<HTMLElement>(
+        '[data-vetra-sortable-block="block-c"]',
+      )
+      if (dragTarget === null) {
+        throw new Error('Expected block-c sortable item to render.')
+      }
+
+      expect(dragTarget.dataset.vetraDragTailOver).toBe('true')
+
+      act(() => {
+        dndMock.dispatchDragEnd({
+          active: { id: 'block-a' },
+          delta: { x: 0, y: 20 },
+          over: { id: 'block-c' },
+        })
+      })
+
+      expect(commands).toEqual([
+        {
+          type: 'moveBlock',
+          blockId: 'block-a',
+          toParentId: 'root',
+          toIndex: 3,
+        },
+      ])
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('does not treat the last visible item as the document tail during partial virtualization', () => {
+    virtualizerMock.setRange(0, 2)
+    const document = createDocument({
+      id: 'doc',
+      blocks: [
+        paragraph('block-a', 'A'),
+        paragraph('block-b', 'B'),
+        paragraph('block-c', 'C'),
+        paragraph('block-d', 'D'),
+      ],
+    })
+    const commands: EditorCommand[] = []
+    const recordingEditor = createRecordingEditor(
+      createEditor(createEditorState(document)),
+      commands,
+    )
+    const rendered = renderVirtualList(recordingEditor)
+
+    try {
+      expect(rendered.container.querySelector('[data-vetra-sortable-block="block-c"]')).toBeNull()
+
+      act(() => {
+        dndMock.dispatchDragOver({
+          active: { id: 'block-a' },
+          delta: { x: 0, y: 20 },
+          over: { id: 'block-b' },
+        })
+      })
+
+      const visibleTailTarget = rendered.container.querySelector<HTMLElement>(
+        '[data-vetra-sortable-block="block-b"]',
+      )
+      if (visibleTailTarget === null) {
+        throw new Error('Expected block-b sortable item to render.')
+      }
+
+      expect(visibleTailTarget.dataset.vetraDragOver).toBe('true')
+      expect(visibleTailTarget.dataset.vetraDragTailOver).toBe('false')
+
+      act(() => {
+        dndMock.dispatchDragEnd({
+          active: { id: 'block-a' },
+          delta: { x: 0, y: 20 },
+          over: { id: 'block-b' },
+        })
+      })
+
+      expect(commands).toEqual([
+        {
+          type: 'moveBlock',
+          blockId: 'block-a',
+          toParentId: 'root',
+          toIndex: 1,
+        },
       ])
     } finally {
       rendered.cleanup()

@@ -7,6 +7,7 @@ import {
   type ParagraphBlock,
 } from '@vetra/core'
 import { useEditor } from '@vetra/react/context/EditorContext'
+import { focusBlockShellAfterRender } from '@vetra/react/focus'
 import { useBlockDragHandle } from '@vetra/react/drag/BlockDragHandleContext'
 
 export interface BlockControlsProps {
@@ -119,50 +120,4 @@ function createBlockIdSuffix(): string {
 
   fallbackBlockIdSeed += 1
   return `local-${Date.now().toString(36)}-${String(fallbackBlockIdSeed)}`
-}
-
-function focusBlockShellAfterRender(anchor: HTMLElement | null, blockId: BlockId): void {
-  const root = anchor?.closest('.vetra-editor-root') ?? anchor?.ownerDocument ?? null
-
-  scheduleAfterRender(() => {
-    const blockShell = findBlockShell(root, blockId)
-    if (blockShell === undefined) {
-      return
-    }
-
-    const editor = blockShell.querySelector<HTMLElement>(
-      '.vetra-inline-editor[contenteditable="true"]',
-    )
-    if (editor !== null) {
-      editor.focus({ preventScroll: true })
-      return
-    }
-
-    blockShell.focus()
-  })
-}
-
-function scheduleAfterRender(callback: () => void): void {
-  if (typeof globalThis.requestAnimationFrame === 'function') {
-    globalThis.requestAnimationFrame(() => {
-      callback()
-    })
-    return
-  }
-
-  globalThis.setTimeout(callback, 0)
-}
-
-function findBlockShell(root: ParentNode | null, blockId: BlockId): HTMLElement | undefined {
-  if (root === null) {
-    return undefined
-  }
-
-  for (const element of root.querySelectorAll<HTMLElement>('[data-vetra-block-shell]')) {
-    if (element.dataset.vetraBlockShell === blockId) {
-      return element
-    }
-  }
-
-  return undefined
 }

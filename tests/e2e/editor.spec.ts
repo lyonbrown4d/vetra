@@ -97,6 +97,32 @@ test.describe('Vetra demo editor main editing path', () => {
     await expect(page.getByLabel('Code block')).toBeVisible()
   })
 
+  test('uses keyboard navigation in the focused slash menu', async ({ page }) => {
+    const anchorBlockId = 'design-quote'
+    const before = await readSerializedDocument(page)
+
+    await activateBlock(page, anchorBlockId)
+    await openSlashMenuFromActiveBlock(page)
+
+    const slashMenu = page.getByRole('menu', { name: 'Slash menu' })
+    await expect(slashMenu).toBeFocused()
+
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+
+    const after = await waitForSerializedDocument(page, (serialized) => {
+      const insertedBlock = findBlockAfter(serialized, anchorBlockId)
+
+      return insertedBlock?.type === 'heading' && insertedBlock.props?.level === 2
+    })
+    const insertedBlock = expectDefined(findBlockAfter(after, anchorBlockId))
+
+    expect(after.document.version).toBeGreaterThan(before.document.version)
+    expect(insertedBlock.type).toBe('heading')
+    await expect(slashMenu).toHaveCount(0)
+    await expect(blockShell(page, insertedBlock.id)).toHaveAttribute('data-active', 'true')
+  })
+
   test('inserts a paragraph after a block from the gutter plus button', async ({ page }) => {
     const anchorBlockId = 'intro-body'
     const before = await readSerializedDocument(page)
@@ -105,17 +131,25 @@ test.describe('Vetra demo editor main editing path', () => {
     await blockRow(page, anchorBlockId).hover()
     await blockPlusButton(page, anchorBlockId).click()
 
-    const after = await waitForSerializedDocument(page, (serialized) => {
-      const insertedBlock = findBlockAfter(serialized, anchorBlockId)
+    await expect(activeInlineEditor(page)).toBeFocused()
+    await page.keyboard.type('Typed immediately after plus')
 
-      return insertedBlock?.type === 'paragraph' && readBlockPlainText(insertedBlock) === ''
+    const afterTyping = await waitForSerializedDocument(page, (serialized) => {
+      const typedBlock = findBlockAfter(serialized, anchorBlockId)
+
+      return (
+        typedBlock?.type === 'paragraph' &&
+        readBlockPlainText(typedBlock) === 'Typed immediately after plus'
+      )
     })
-    const insertedBlock = expectDefined(findBlockAfter(after, anchorBlockId))
+    const insertedBlock = expectDefined(findBlockAfter(afterTyping, anchorBlockId))
 
-    expect(after.document.version).toBeGreaterThan(before.document.version)
-    expect(getRootChildren(after)).toHaveLength(beforeChildren.length + 1)
-    expect(readBlockPlainText(insertedBlock)).toBe('')
+    expect(afterTyping.document.version).toBeGreaterThan(before.document.version)
+    expect(getRootChildren(afterTyping)).toHaveLength(beforeChildren.length + 1)
     await expect(blockShell(page, insertedBlock.id)).toHaveAttribute('data-active', 'true')
+    expect(readBlockPlainText(expectDefined(findBlockAfter(afterTyping, anchorBlockId)))).toBe(
+      'Typed immediately after plus',
+    )
   })
 
   test('pastes plain text into multiple blocks and updates the serialized document', async ({
@@ -216,7 +250,7 @@ test.describe('Vetra demo editor main editing path', () => {
     expect(after.document.version).toBeGreaterThan(before.document.version)
     expect(getRootChildren(after)).toEqual([])
 
-    await page.keyboard.press('ControlOrMeta+Z')
+    await dispatchEditorKeydown(page, 'z', { ctrlKey: true })
 
     const afterUndo = await waitForSerializedDocument(page, (serialized) => {
       return getRootChildren(serialized).length === getRootChildren(before).length
@@ -328,6 +362,28 @@ async function pastePlainText(page: Page, text: string): Promise<void> {
       }),
     )
   }, text)
+}
+
+async function dispatchEditorKeydown(
+  page: Page,
+  key: string,
+  options: { readonly ctrlKey?: boolean; readonly metaKey?: boolean; readonly shiftKey?: boolean },
+): Promise<void> {
+  await editorRoot(page).evaluate(
+    (node, payload) => {
+      node.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: payload.ctrlKey ?? false,
+          key: payload.key,
+          metaKey: payload.metaKey ?? false,
+          shiftKey: payload.shiftKey ?? false,
+        }),
+      )
+    },
+    { key, ...options },
+  )
 }
 
 async function readLocatorTop(locator: Locator): Promise<number> {

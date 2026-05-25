@@ -6,6 +6,12 @@ This package owns React context, hooks, block rendering, and virtualized renderi
 
 The renderer exposes block-level selector hooks such as `useBlock`, active lifecycle helpers such as `useActiveBlockLifecycle` / `useSelectBlock`, slash menu primitives such as `SlashMenu` / `useSlashMenu`, and debug hooks such as `useMountedBlockCount` for future virtualization and performance tests.
 
+## Notion-like interactions
+
+`EditorRoot` opens the slash menu from the active block and anchors it with Floating UI using fixed positioning, so the menu does not shift document flow. The menu auto-focuses when opened, supports Arrow navigation, `Home` / `End` jumps, `Enter` or `Tab` confirmation, `Escape` close, and closes when the user clicks another block.
+
+Block gutter controls are renderer-owned UI. The plus control dispatches `insertBlockAfter` with an empty paragraph, updates selection through `setSelection`, and focuses the new active block after render so callers can type immediately. The drag handle wires into dnd-kit and keeps reorder changes routed through the core `moveBlock` command.
+
 ## Paste
 
 `createPasteHandler` and `usePasteHandler` provide renderer-owned paste orchestration. The default strategy treats clipboard text as plain text through `@vetra/import-plain-text`, converts it to paragraph blocks, and dispatches core `insertBlockBefore` / `insertBlockAfter` commands against a caller-provided reference block. The handler does not read DOM selection.
