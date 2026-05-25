@@ -68,12 +68,14 @@ export interface LexicalBlockEditorProps {
   readonly onStructuralIntent?: (intent: LexicalBlockStructuralIntent) => void
   readonly onUndo?: () => boolean | undefined
   readonly onRedo?: () => boolean | undefined
+  readonly onSelectAll?: () => boolean | undefined
 }
 
 interface LexicalBlockEditorBridgeCallbacks extends LexicalBlockStructuralIntentCallbacks {
   readonly onCommit: ((commit: LexicalBlockContentCommit) => void) | undefined
   readonly onUndo: (() => boolean | undefined) | undefined
   readonly onRedo: (() => boolean | undefined) | undefined
+  readonly onSelectAll: (() => boolean | undefined) | undefined
 }
 
 export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
@@ -90,6 +92,7 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
     onStructuralIntent: props.onStructuralIntent,
     onUndo: props.onUndo,
     onRedo: props.onRedo,
+    onSelectAll: props.onSelectAll,
   })
   const commitLatestContentOnUnmount = useCallback(() => {
     emitContentCommit(
@@ -133,6 +136,15 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
 
     if (!isComposing && isRedoShortcut(event) && callbacks.onRedo !== undefined) {
       const handled = callbacks.onRedo()
+      if (handled !== false) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      return
+    }
+
+    if (!isComposing && isSelectAllShortcut(event) && callbacks.onSelectAll !== undefined) {
+      const handled = callbacks.onSelectAll()
       if (handled !== false) {
         event.preventDefault()
         event.stopPropagation()
@@ -339,6 +351,10 @@ function isRedoShortcut(event: KeyboardShortcutEvent): boolean {
 
   const key = event.key.toLowerCase()
   return (event.shiftKey && key === 'z') || (!event.shiftKey && key === 'y')
+}
+
+function isSelectAllShortcut(event: KeyboardShortcutEvent): boolean {
+  return hasPrimaryShortcutModifier(event) && !event.shiftKey && event.key.toLowerCase() === 'a'
 }
 
 function emitContentCommit(

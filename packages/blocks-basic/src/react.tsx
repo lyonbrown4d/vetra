@@ -94,31 +94,29 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
 
   useEffect(() => {
     let cancelled = false
-    let secondFrameId: number | undefined
-    const firstFrameId = requestAnimationFrame(() => {
-      secondFrameId = requestAnimationFrame(() => {
-        if (cancelled) {
-          return
-        }
+    const frameId = requestAnimationFrame(() => {
+      if (cancelled) {
+        return
+      }
 
-        const editable = activeBlockRootRef.current?.querySelector<HTMLElement>(
-          '.vetra-inline-editor[contenteditable="true"]',
-        )
+      const blockRoot = activeBlockRootRef.current
+      if (blockRoot === null) {
+        return
+      }
 
-        if (editable === undefined || editable === null || document.activeElement === editable) {
-          return
-        }
+      const editable = blockRoot.querySelector<HTMLElement>(
+        '.vetra-inline-editor[contenteditable="true"]',
+      )
+      if (editable === null || document.activeElement === editable) {
+        return
+      }
 
-        editable.focus({ preventScroll: true })
-      })
+      editable.focus({ preventScroll: true })
     })
 
     return () => {
       cancelled = true
-      cancelAnimationFrame(firstFrameId)
-      if (secondFrameId !== undefined) {
-        cancelAnimationFrame(secondFrameId)
-      }
+      cancelAnimationFrame(frameId)
     }
   }, [props.block.id])
 
@@ -167,7 +165,7 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
               type: 'setSelection',
               selection: { type: 'block', blockId: previousBlock.id },
             })
-            focusBlockShellAfterRender(activeBlockRootRef.current, previousBlock.id)
+            focusActiveBlockEditorAfterRender(activeBlockRootRef.current, previousBlock.id)
           }
 
           return result.ok
@@ -190,13 +188,16 @@ function RichTextActive(props: BlockRendererProps<ParagraphBlock | HeadingBlock 
               type: 'setSelection',
               selection: { type: 'block', blockId: afterBlockId },
             })
-            focusBlockShellAfterRender(activeBlockRootRef.current, afterBlockId)
+            focusActiveBlockEditorAfterRender(activeBlockRootRef.current, afterBlockId)
           }
 
           return result.ok
         }}
         onUndo={() => props.editor.undo().ok}
         onRedo={() => props.editor.redo().ok}
+        onSelectAll={() => {
+          return selectAllInActiveBlock(activeBlockRootRef.current)
+        }}
         placeholder="Type..."
         value={value}
       />
@@ -264,11 +265,49 @@ function createRandomIdSegment(): string {
   return globalThis.crypto.randomUUID()
 }
 
-function focusBlockShellAfterRender(anchor: HTMLElement | null, blockId: BlockId): void {
+function selectAllInActiveBlock(root: HTMLElement | null): boolean {
+  if (root === null || typeof globalThis.getSelection !== 'function') {
+    return false
+  }
+
+  const editable = root.querySelector<HTMLElement>('.vetra-inline-editor[contenteditable="true"]')
+
+  if (editable === null) {
+    return false
+  }
+
+  const selection = globalThis.getSelection()
+  if (selection === null) {
+    return false
+  }
+
+  const range = document.createRange()
+
+  range.selectNodeContents(editable)
+  selection.removeAllRanges()
+  selection.addRange(range)
+
+  return true
+}
+
+function focusActiveBlockEditorAfterRender(anchor: HTMLElement | null, blockId: BlockId): void {
   const root = anchor?.closest('.vetra-editor-root') ?? anchor?.ownerDocument ?? null
 
   scheduleAfterRender(() => {
-    findBlockShell(root, blockId)?.focus()
+    const blockShell = findBlockShell(root, blockId)
+    if (blockShell === undefined) {
+      return
+    }
+
+    const editable = blockShell.querySelector<HTMLElement>(
+      '.vetra-inline-editor[contenteditable="true"]',
+    )
+    if (editable !== null) {
+      editable.focus({ preventScroll: true })
+      return
+    }
+
+    blockShell.focus()
   })
 }
 

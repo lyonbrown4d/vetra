@@ -125,7 +125,20 @@ function focusBlockShellAfterRender(anchor: HTMLElement | null, blockId: BlockId
   const root = anchor?.closest('.vetra-editor-root') ?? anchor?.ownerDocument ?? null
 
   scheduleAfterRender(() => {
-    findBlockShell(root, blockId)?.focus()
+    const blockShell = findBlockShell(root, blockId)
+    if (blockShell === undefined) {
+      return
+    }
+
+    const editor = blockShell.querySelector<HTMLElement>(
+      '.vetra-inline-editor[contenteditable="true"]',
+    )
+    if (editor !== null) {
+      editor.focus({ preventScroll: true })
+      return
+    }
+
+    blockShell.focus()
   })
 }
 

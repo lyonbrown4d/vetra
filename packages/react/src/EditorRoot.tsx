@@ -97,7 +97,8 @@ function EditorSurface(props: EditorSurfaceProps) {
         !isComposingKeyEvent(event) &&
         slashMenuState === null &&
         isSelectAllBlocksShortcut(event) &&
-        !isTextInputElement(event.target)
+        !isTextInputElement(event.target) &&
+        !isLexicalActiveEditorTarget(event.target)
       ) {
         event.preventDefault()
         event.stopPropagation()
@@ -197,8 +198,11 @@ function EditorSurface(props: EditorSurfaceProps) {
         const activeBlockId = getActiveBlockId(editor)
         if (activeBlockId !== undefined) {
           event.preventDefault()
+          const blockShell = getBlockShell(surfaceRef.current, activeBlockId)
+          const anchorElement = resolveSlashMenuTargetAnchor(blockShell, event.target)
+
           setSlashMenuState({
-            anchorElement: getBlockShell(surfaceRef.current, activeBlockId) ?? surfaceRef.current,
+            anchorElement,
             targetBlockId: activeBlockId,
             query: '',
           })
@@ -358,6 +362,13 @@ function isTextInputElement(target: EventTarget): boolean {
   return target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement
 }
 
+function isLexicalActiveEditorTarget(target: EventTarget): boolean {
+  return (
+    target instanceof HTMLElement &&
+    target.closest('.vetra-inline-editor[contenteditable="true"]') !== null
+  )
+}
+
 function hasKeyboardNavigationModifier(event: KeyboardEvent<HTMLElement>): boolean {
   return hasNonShiftKeyboardNavigationModifier(event) || event.shiftKey
 }
@@ -405,6 +416,31 @@ function isTextEditingElement(target: EventTarget): boolean {
     target instanceof HTMLElement &&
     (target.isContentEditable || target.closest('[contenteditable="true"]') !== null)
   )
+}
+
+function resolveSlashMenuTargetAnchor(
+  blockShell: HTMLElement | undefined,
+  target: EventTarget,
+): HTMLElement | null {
+  if (target instanceof HTMLElement) {
+    const inlineTarget = target.closest('.vetra-inline-editor[contenteditable="true"]')
+    if (inlineTarget !== null && inlineTarget instanceof HTMLElement) {
+      return inlineTarget
+    }
+  }
+
+  if (blockShell !== undefined) {
+    const inlineTarget = blockShell.querySelector<HTMLElement>(
+      '.vetra-inline-editor[contenteditable="true"]',
+    )
+    if (inlineTarget !== null) {
+      return inlineTarget
+    }
+
+    return blockShell
+  }
+
+  return null
 }
 
 function resolveSlashMenuAnchor(
