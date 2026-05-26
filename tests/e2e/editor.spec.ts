@@ -286,6 +286,14 @@ test.describe('Vetra demo editor main editing path', () => {
     expect(readBlockPlainText(expectDefined(insertedBlocks[1]))).toBe('Second pasted paragraph')
   })
 
+  test('exports the current document as HTML from the exchange panel', async ({ page }) => {
+    await exchangeFormatTab(page, 'HTML').click()
+    await page.getByRole('button', { name: 'Export HTML' }).click()
+
+    await expect(htmlDocumentTextarea(page)).toHaveValue(/<h1(?:\s|>)/i)
+    await expect(htmlDocumentTextarea(page)).toHaveValue(/<p(?:\s|>)/i)
+  })
+
   test('splits a Lexical block with Enter and merges it back with Backspace', async ({ page }) => {
     const blockId = 'intro-body'
     const before = await readSerializedDocument(page)
@@ -374,6 +382,14 @@ function editorSurface(page: Page): Locator {
 
 function serializedDocumentTextarea(page: Page): Locator {
   return page.getByLabel(/^(Serialized Vetra document|Vetra JSON document)$/)
+}
+
+function htmlDocumentTextarea(page: Page): Locator {
+  return page.getByLabel('HTML document')
+}
+
+function exchangeFormatTab(page: Page, name: string): Locator {
+  return page.getByRole('tab', { name })
 }
 
 function blockShell(page: Page, blockId: string): Locator {

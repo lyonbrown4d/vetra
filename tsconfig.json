@@ -2,7 +2,9 @@
   "files": [],
   "references": [
     { "path": "./packages/core" },
+    { "path": "./packages/import-html" },
     { "path": "./packages/import-markdown" },
+    { "path": "./packages/export-html" },
     { "path": "./packages/export-markdown" },
     { "path": "./packages/import-plain-text" },
     { "path": "./packages/export-plain-text" },

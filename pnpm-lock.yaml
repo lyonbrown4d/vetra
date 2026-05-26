@@ -121,12 +121,18 @@ importers:
       '@vetra/core':
         specifier: workspace:*
         version: link:../core
+      '@vetra/export-html':
+        specifier: workspace:*
+        version: link:../export-html
       '@vetra/export-markdown':
         specifier: workspace:*
         version: link:../export-markdown
       '@vetra/export-plain-text':
         specifier: workspace:*
         version: link:../export-plain-text
+      '@vetra/import-html':
+        specifier: workspace:*
+        version: link:../import-html
       '@vetra/import-markdown':
         specifier: workspace:*
         version: link:../import-markdown
@@ -159,6 +165,12 @@ importers:
         specifier: ^6.3.5
         version: 6.4.2(@types/node@24.12.4)(yaml@2.9.0)
 
+  packages/export-html:
+    dependencies:
+      '@vetra/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/export-markdown:
     dependencies:
       '@vetra/core':
@@ -166,6 +178,12 @@ importers:
         version: link:../core
 
   packages/export-plain-text:
+    dependencies:
+      '@vetra/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/import-html:
     dependencies:
       '@vetra/core':
         specifier: workspace:*
@@ -230,6 +248,9 @@ importers:
       '@vetra/import-plain-text':
         specifier: workspace:*
         version: link:../import-plain-text
+      '@vetra/persistence-json':
+        specifier: workspace:*
+        version: link:../persistence-json
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)

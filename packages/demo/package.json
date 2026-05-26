@@ -12,8 +12,10 @@
   "dependencies": {
     "@vetra/blocks-basic": "workspace:*",
     "@vetra/core": "workspace:*",
+    "@vetra/export-html": "workspace:*",
     "@vetra/export-markdown": "workspace:*",
     "@vetra/export-plain-text": "workspace:*",
+    "@vetra/import-html": "workspace:*",
     "@vetra/import-markdown": "workspace:*",
     "@vetra/import-plain-text": "workspace:*",
     "@vetra/persistence-json": "workspace:*",

@@ -9,8 +9,10 @@ import {
 } from 'react'
 import { basicBlocks } from '@vetra/blocks-basic/react'
 import type { DocumentState } from '@vetra/core'
+import { documentToHtml } from '@vetra/export-html'
 import { documentToMarkdown } from '@vetra/export-markdown'
 import { documentToPlainText } from '@vetra/export-plain-text'
+import { htmlToDocument } from '@vetra/import-html'
 import { markdownToDocument } from '@vetra/import-markdown'
 import { plainTextToDocument } from '@vetra/import-plain-text'
 import { parseDocument, stringifyDocument } from '@vetra/persistence-json'
@@ -46,7 +48,7 @@ interface ActivityLogEntry {
   readonly rootBlockCount: number
 }
 
-type ExchangePanel = 'json' | 'plain-text' | 'markdown'
+type ExchangePanel = 'json' | 'plain-text' | 'markdown' | 'html'
 type LoadedDocumentSource = PlaygroundFixtureId | 'custom'
 
 const idleStatus: ToolStatus = {
@@ -74,6 +76,11 @@ const exchangePanels: readonly {
     label: 'Markdown',
     description: 'Optional external format adapter.',
   },
+  {
+    id: 'html',
+    label: 'HTML',
+    description: 'Optional sanitized HTML adapter.',
+  },
 ]
 
 const capabilityRows: readonly {
@@ -85,7 +92,7 @@ const capabilityRows: readonly {
   { label: 'Inline editor', value: 'single active Lexical block' },
   { label: 'Mutation path', value: 'command / transaction' },
   { label: 'Persistence', value: 'versioned DocumentState JSON' },
-  { label: 'Adapters', value: 'plain text and Markdown packages' },
+  { label: 'Adapters', value: 'plain text, Markdown, and HTML packages' },
   { label: 'React Scan', value: 'dev-only render instrumentation' },
 ]
 
@@ -136,6 +143,9 @@ export function App() {
   const [markdownText, setMarkdownText] = useState(() =>
     createMarkdownPanelText(initialDocument, initialFixtureId),
   )
+  const [htmlText, setHtmlText] = useState(() =>
+    createHtmlPanelText(initialDocument, initialFixtureId),
+  )
   const [activityLog, setActivityLog] = useState<readonly ActivityLogEntry[]>(() => [
     createActivityLogEntry(0, 'Initial fixture loaded', initialDocument),
   ])
@@ -179,6 +189,7 @@ export function App() {
     setJsonText(createJsonPanelText(nextDocument, source))
     setPlainText(createPlainTextPanelText(nextDocument, source))
     setMarkdownText(createMarkdownPanelText(nextDocument, source))
+    setHtmlText(createHtmlPanelText(nextDocument, source))
   }, [])
 
   const loadDocument = useCallback(
@@ -313,6 +324,22 @@ export function App() {
       })
     }
   }, [loadDocument, markdownText])
+
+  const handleExportHtml = useCallback(() => {
+    setHtmlText(documentToHtml(document))
+    setStatus({ tone: 'success', message: 'Current document exported as HTML' })
+  }, [document])
+
+  const handleImportHtml = useCallback(() => {
+    try {
+      loadDocument(htmlToDocument(htmlText), 'HTML imported', 'custom')
+    } catch (error) {
+      setStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'HTML import failed',
+      })
+    }
+  }, [htmlText, loadDocument])
 
   return (
     <main className="vetra-demo-shell">
@@ -450,6 +477,27 @@ export function App() {
                 }}
                 spellCheck={false}
                 value={markdownText}
+              />
+            </div>
+          ) : null}
+
+          {activeExchangePanel === 'html' ? (
+            <div className="vetra-demo-exchange-pane" role="tabpanel">
+              <div className="vetra-demo-actions">
+                <button onClick={handleImportHtml} type="button">
+                  Import HTML
+                </button>
+                <button onClick={handleExportHtml} type="button">
+                  Export HTML
+                </button>
+              </div>
+              <textarea
+                aria-label="HTML document"
+                onChange={(event) => {
+                  setHtmlText(event.target.value)
+                }}
+                spellCheck={false}
+                value={htmlText}
               />
             </div>
           ) : null}
@@ -731,6 +779,14 @@ function createMarkdownPanelText(document: DocumentState, source: LoadedDocument
   }
 
   return documentToMarkdown(document)
+}
+
+function createHtmlPanelText(document: DocumentState, source: LoadedDocumentSource): string {
+  if (isBenchmarkLoadedDocumentSource(source)) {
+    return createBenchmarkPanelText(document, source, 'HTML export skipped during benchmark mode.')
+  }
+
+  return documentToHtml(document)
 }
 
 function isBenchmarkLoadedDocumentSource(

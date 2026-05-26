@@ -10,8 +10,10 @@
   "include": ["src/**/*.ts", "src/**/*.tsx"],
   "references": [
     { "path": "../core" },
+    { "path": "../export-html" },
     { "path": "../export-markdown" },
     { "path": "../export-plain-text" },
+    { "path": "../import-html" },
     { "path": "../import-markdown" },
     { "path": "../import-plain-text" },
     { "path": "../persistence-json" },

@@ -1,0 +1,21 @@
+{
+  "name": "@vetra/import-html",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "pwsh -NoProfile -Command \"Remove-Item -Recurse -Force dist, tsconfig.tsbuildinfo -ErrorAction SilentlyContinue\"",
+    "test": "vitest run packages/import-html/tests"
+  },
+  "dependencies": {
+    "@vetra/core": "workspace:*"
+  }
+}

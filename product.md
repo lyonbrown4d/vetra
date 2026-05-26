@@ -1157,6 +1157,7 @@ Playground 应作为下游调用方理解 Vetra 能力的完整示例，而不�
 - 每个 block 前展示 gutter controls，包括加号插入段落和拖拽手柄；
 - block reorder 通过 dnd-kit 在 React renderer 内完成交互编排，并通过 core `moveBlock` command 修改文档顺序；
 - playground inspector 展示 document version、active block、selected count、mounted block count、active editor count 和 activity log；
+- playground import/export 面板覆盖 Vetra JSON、plain text、Markdown、HTML，并通过独立 adapter package 接入；
 - V1 只支持 root-level visible block reorder，nested indent / outdent 和跨层级拖拽后续迭代。
 
 这些能力属于 `@vetra/react` 和 playground 展示层，不允许反向污染 `@vetra/core`。
@@ -1781,6 +1782,16 @@ Plain Text 同理：
 import { plainTextToDocument } from '@vetra/import-plain-text'
 
 const document = plainTextToDocument(text)
+
+editor.load(document)
+```
+
+HTML 同理：
+
+```ts
+import { htmlToDocument } from '@vetra/import-html'
+
+const document = htmlToDocument(html)
 
 editor.load(document)
 ```

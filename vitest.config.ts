@@ -19,6 +19,14 @@ const alias = [
     replacement: fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)),
   },
   {
+    find: /^@vetra\/export-html\/(.+)$/,
+    replacement: fileURLToPath(new URL('./packages/export-html/src/$1', import.meta.url)),
+  },
+  {
+    find: '@vetra/export-html',
+    replacement: fileURLToPath(new URL('./packages/export-html/src/index.ts', import.meta.url)),
+  },
+  {
     find: /^@vetra\/export-markdown\/(.+)$/,
     replacement: fileURLToPath(new URL('./packages/export-markdown/src/$1', import.meta.url)),
   },
@@ -35,6 +43,14 @@ const alias = [
     replacement: fileURLToPath(
       new URL('./packages/export-plain-text/src/index.ts', import.meta.url),
     ),
+  },
+  {
+    find: /^@vetra\/import-html\/(.+)$/,
+    replacement: fileURLToPath(new URL('./packages/import-html/src/$1', import.meta.url)),
+  },
+  {
+    find: '@vetra/import-html',
+    replacement: fileURLToPath(new URL('./packages/import-html/src/index.ts', import.meta.url)),
   },
   {
     find: /^@vetra\/import-markdown\/(.+)$/,
