@@ -94,6 +94,42 @@ describe('@vetra/import-html', () => {
     expect(inlineText(block(document, 'html-3')?.content)).toBe('Nested body')
   })
 
+  it('keeps inline code inside ordinary containers without splitting paragraph flow', () => {
+    const document = htmlToDocument(
+      '<div>Use <code>const value = 1</code> now</div><code class="language-js">console.log(1)</code>',
+    )
+
+    expect(document.children.root).toEqual(['html-1', 'html-2'])
+    expect(block(document, 'html-1')?.type).toBe('paragraph')
+    expect(inlineText(block(document, 'html-1')?.content)).toBe('Use const value = 1 now')
+    expect(block(document, 'html-2')).toMatchObject({
+      type: 'code',
+      props: { language: 'js' },
+      content: 'console.log(1)',
+    })
+  })
+
+  it('keeps whitespace-wrapped standalone code as a code block', () => {
+    const document = htmlToDocument(
+      ['<div>', '  <code class="language-ts">const answer = 42</code>', '</div>'].join('\n'),
+    )
+
+    expect(document.children.root).toEqual(['html-1'])
+    expect(block(document, 'html-1')).toMatchObject({
+      type: 'code',
+      props: { language: 'ts' },
+      content: 'const answer = 42',
+    })
+  })
+
+  it('keeps inline code wrapped by inline elements in paragraph flow', () => {
+    const document = htmlToDocument('<span><code>inline()</code></span> text')
+
+    expect(document.children.root).toEqual(['html-1'])
+    expect(block(document, 'html-1')?.type).toBe('paragraph')
+    expect(inlineText(block(document, 'html-1')?.content)).toBe('inline() text')
+  })
+
   it('ignores dangerous HTML content instead of importing it as document text', () => {
     const document = htmlToDocument(
       [

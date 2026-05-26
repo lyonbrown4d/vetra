@@ -228,7 +228,7 @@ export function resolveTopLevelBlockDragMove(
       type: 'moveBlock',
       blockId: input.activeId,
       toParentId: input.rootId,
-      toIndex: input.topLevelBlockIds.length,
+      toIndex: input.topLevelBlockIds.length - 1,
     }
   }
 

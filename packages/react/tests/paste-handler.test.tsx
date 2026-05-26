@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { stringifyDocument } from '@vetra/persistence-json'
 import {
   createDocument,
   createEditor,
   createEditorState,
   createTextInlineContent,
   type DocBlock,
+  type DocumentState,
   type HeadingBlock,
   type InlineContent,
   type ParagraphBlock,
@@ -14,6 +16,7 @@ import {
   createDocumentPasteStrategy,
   createPasteHandler,
   markdownPasteKind,
+  pasteClipboardPayloadIntoEditor,
   type PasteError,
   type PasteResult,
 } from '@vetra/react'
@@ -170,5 +173,73 @@ describe('paste handler', () => {
     expect(result.insertedBlockIds).toEqual(['pasted-markdown'])
     expect(editor.getState().document.blocks['pasted-markdown']?.type).toBe('heading')
     expect(blockText(editor.getState().document.blocks['pasted-markdown'])).toBe('Title')
+  })
+
+  it('rejects clipboard subtree id collisions before changing the document', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('anchor', 'Anchor')],
+    })
+    const editor = createEditor(createEditorState(document))
+    const clipboardRootId = '__clipboard-root__'
+    const sourceDocument: DocumentState = {
+      id: 'clipboard-doc',
+      version: 1,
+      rootId: clipboardRootId,
+      blocks: {
+        [clipboardRootId]: { id: clipboardRootId, type: 'root' },
+        'source-parent': paragraph('source-parent', 'Parent'),
+        'source-child': paragraph('source-child', 'Child'),
+      },
+      children: {
+        [clipboardRootId]: ['source-parent'],
+        'source-parent': ['source-child'],
+        'source-child': [],
+      },
+    }
+
+    const result = pasteClipboardPayloadIntoEditor({
+      editor,
+      target: { referenceBlockId: 'anchor' },
+      payload: stringifyDocument(sourceDocument),
+      idFactory: () => 'duplicate-paste-id',
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe('pasteDuplicateBlockId')
+    }
+    expect(editor.getState().document).toBe(document)
+    expect(editor.getState().document.children.root).toEqual(['anchor'])
+    expect(editor.getState().document.blocks['duplicate-paste-id']).toBeUndefined()
+  })
+
+  it('returns a clipboard paste error when the id factory throws', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('anchor', 'Anchor')],
+    })
+    const editor = createEditor(createEditorState(document))
+    const sourceDocument = createDocument({
+      id: 'clipboard-doc',
+      rootId: '__clipboard-root__',
+      blocks: [paragraph('source-block', 'Copied')],
+    })
+
+    const result = pasteClipboardPayloadIntoEditor({
+      editor,
+      target: { referenceBlockId: 'anchor' },
+      payload: stringifyDocument(sourceDocument),
+      idFactory: () => {
+        throw new Error('Cannot allocate paste id.')
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe('pasteStrategyFailed')
+      expect(result.error.message).toBe('Cannot allocate paste id.')
+    }
+    expect(editor.getState().document).toBe(document)
   })
 })

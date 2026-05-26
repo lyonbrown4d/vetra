@@ -56,6 +56,8 @@ export function EditorRoot(props: EditorRootProps) {
   const previousVersionRef = useRef(props.initialValue.version)
 
   useEffect(() => {
+    previousVersionRef.current = props.initialValue.version
+
     if (onChange === undefined) {
       return undefined
     }
@@ -69,7 +71,7 @@ export function EditorRoot(props: EditorRootProps) {
       previousVersionRef.current = nextDocument.version
       onChange(nextDocument)
     })
-  }, [editor, onChange])
+  }, [editor, onChange, props.initialValue.version])
 
   return (
     <EditorProvider blocks={props.blocks} editor={editor}>
@@ -407,7 +409,7 @@ function EditorSurface(props: EditorSurfaceProps) {
 
   return (
     <div
-      className={props.className ?? 'vetra-editor-root'}
+      className={createEditorRootClassName(props.className)}
       onPointerDownCapture={handlePointerDownCapture}
       onKeyDown={handleKeyDown}
       onKeyDownCapture={handleKeyDownCapture}
@@ -434,6 +436,10 @@ function EditorSurface(props: EditorSurfaceProps) {
   )
 }
 
+function createEditorRootClassName(className: string | undefined): string {
+  return className === undefined ? 'vetra-editor-root' : `vetra-editor-root ${className}`
+}
+
 function getActiveBlockId(editor: EditorRuntime): BlockId | undefined {
   const state = editor.getState()
   const selection = normalizeSelection(state.document, state.selection)
@@ -449,14 +455,27 @@ function getActiveBlockId(editor: EditorRuntime): BlockId | undefined {
   }
 }
 
+let fallbackBlockIdSeed = 0
+
 function createAvailableBlockId(editor: EditorRuntime, prefix: string): BlockId {
-  let candidate = `${prefix}-${globalThis.crypto.randomUUID()}`
+  let candidate = `${prefix}-${createBlockIdSuffix()}`
 
   while (editor.getState().document.blocks[candidate] !== undefined) {
-    candidate = `${prefix}-${globalThis.crypto.randomUUID()}`
+    candidate = `${prefix}-${createBlockIdSuffix()}`
   }
 
   return candidate
+}
+
+function createBlockIdSuffix(): string {
+  const browserCrypto = typeof globalThis.crypto === 'undefined' ? undefined : globalThis.crypto
+
+  if (typeof browserCrypto?.randomUUID === 'function') {
+    return browserCrypto.randomUUID()
+  }
+
+  fallbackBlockIdSeed += 1
+  return `local-${Date.now().toString(36)}-${String(fallbackBlockIdSeed)}`
 }
 
 function isPrintableQueryKey(event: KeyboardEvent<HTMLElement>): boolean {

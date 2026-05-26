@@ -133,7 +133,6 @@ const readableTextBoundaryTags = new Set([
 
 const blockDescendantSelector = [
   'blockquote',
-  'code',
   'div',
   'h1',
   'h2',
@@ -224,6 +223,11 @@ function appendBlocksFromChildren(parent: Node, state: ImportState): void {
       return
     }
 
+    if (isInlineCodeElement(element, inlineParts)) {
+      appendInlineText(extractReadableText(element), sourceTag)
+      return
+    }
+
     if (isSupportedBlockElement(element)) {
       flushInlineText()
       appendSupportedBlock(element, state)
@@ -303,6 +307,60 @@ function isSupportedBlockElement(element: Element): boolean {
     sourceTag === 'hr' ||
     isHeadingTag(sourceTag)
   )
+}
+
+function isInlineCodeElement(element: Element, inlineParts: readonly string[]): boolean {
+  return (
+    tagName(element) === 'code' &&
+    (hasReadableInlineParts(inlineParts) || hasReadableInlineSibling(element))
+  )
+}
+
+function hasReadableInlineParts(inlineParts: readonly string[]): boolean {
+  return inlineParts.some((part) => part.trim().length > 0)
+}
+
+function hasReadableInlineSibling(element: Element): boolean {
+  let sibling = element.nextSibling
+
+  while (sibling !== null) {
+    if (sibling.nodeType === textNode && (sibling.textContent ?? '').trim().length > 0) {
+      return true
+    }
+
+    if (sibling.nodeType === elementNode) {
+      const siblingElement = sibling as Element
+      const sourceTag = tagName(siblingElement)
+
+      if (dangerousTags.has(sourceTag)) {
+        sibling = sibling.nextSibling
+        continue
+      }
+
+      if (sourceTag === 'br') {
+        return true
+      }
+
+      if (!isSupportedBlockElement(siblingElement)) {
+        if (extractReadableText(siblingElement).length > 0) {
+          return true
+        }
+
+        sibling = sibling.nextSibling
+        continue
+      }
+
+      if (isInlineCodeElement(siblingElement, [])) {
+        return true
+      }
+
+      return false
+    }
+
+    sibling = sibling.nextSibling
+  }
+
+  return false
 }
 
 function isContainerElement(element: Element): boolean {

@@ -294,6 +294,37 @@ test.describe('Vetra demo editor main editing path', () => {
     await expect(htmlDocumentTextarea(page)).toHaveValue(/<p(?:\s|>)/i)
   })
 
+  test('imports HTML inline code without splitting paragraph flow', async ({ page }) => {
+    await exchangeFormatTab(page, 'HTML').click()
+    await htmlDocumentTextarea(page).fill(
+      '<div>Use <code>const value = 1</code> now</div><code class="language-js">console.log(1)</code>',
+    )
+    await page.getByRole('button', { name: 'Import HTML' }).click()
+
+    await exchangeFormatTab(page, 'JSON').click()
+    const after = await waitForSerializedDocument(page, (serialized) => {
+      const children = getRootChildren(serialized)
+      const firstBlock =
+        children[0] === undefined ? undefined : serialized.document.blocks[children[0]]
+      const secondBlock =
+        children[1] === undefined ? undefined : serialized.document.blocks[children[1]]
+
+      return (
+        children.length === 2 &&
+        firstBlock?.type === 'paragraph' &&
+        readBlockPlainText(firstBlock) === 'Use const value = 1 now' &&
+        secondBlock?.type === 'code' &&
+        readBlockPlainText(secondBlock) === 'console.log(1)'
+      )
+    })
+    const children = getRootChildren(after)
+
+    expect(readBlockPlainText(expectBlock(after, expectDefined(children[0])))).toBe(
+      'Use const value = 1 now',
+    )
+    expect(expectBlock(after, expectDefined(children[1])).type).toBe('code')
+  })
+
   test('splits a Lexical block with Enter and merges it back with Backspace', async ({ page }) => {
     const blockId = 'intro-body'
     const before = await readSerializedDocument(page)

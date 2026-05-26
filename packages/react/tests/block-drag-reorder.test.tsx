@@ -386,7 +386,7 @@ describe('resolveTopLevelBlockDragMove', () => {
       type: 'moveBlock',
       blockId: 'block-a',
       toParentId: 'root',
-      toIndex: 4,
+      toIndex: 3,
     })
   })
 })
@@ -564,8 +564,13 @@ describe('VirtualBlockList drag reorder', () => {
           type: 'moveBlock',
           blockId: 'block-a',
           toParentId: 'root',
-          toIndex: 3,
+          toIndex: 2,
         },
+      ])
+      expect(recordingEditor.getState().document.children.root).toEqual([
+        'block-b',
+        'block-c',
+        'block-a',
       ])
     } finally {
       rendered.cleanup()

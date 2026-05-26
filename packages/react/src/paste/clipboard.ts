@@ -160,20 +160,26 @@ function pasteSourceDocumentIntoEditor({
     return ok({ handled: false, insertedBlockIds: [], transactions: [] })
   }
 
-  const idCounter = { value: 0 }
+  const plannedPaste = planClipboardPaste({
+    sourceDocument,
+    sourceChildren,
+    targetDocument: state.document,
+    idFactory,
+  })
+  if (!plannedPaste.ok) {
+    return plannedPaste
+  }
+
   let insertionIndex = target.placement === 'before' ? referenceIndex : referenceIndex + 1
   const insertedBlockIds: BlockId[] = []
   const transactions: Transaction[] = []
 
-  for (const sourceRootId of sourceChildren) {
-    const subtreeResult = pasteSubtree({
+  for (const subtree of plannedPaste.value) {
+    const subtreeResult = pastePlannedSubtree({
       editor,
-      sourceDocument,
-      sourceId: sourceRootId,
+      subtree,
       targetParentId: referenceParentId,
       insertIndex: insertionIndex,
-      idFactory,
-      idCounter,
     })
 
     if (!subtreeResult.ok) {
@@ -195,30 +201,66 @@ function pasteSourceDocumentIntoEditor({
   }
 }
 
-interface PasteSubtreeState {
-  readonly editor: EditorRuntime
+interface PlannedPasteSubtree {
+  readonly insertedId: BlockId
+  readonly block: DocBlock
+  readonly children: readonly PlannedPasteSubtree[]
+}
+
+interface PlanClipboardPasteOptions {
+  readonly sourceDocument: DocumentState
+  readonly sourceChildren: readonly BlockId[]
+  readonly targetDocument: DocumentState
+  readonly idFactory: PasteBlockIdFactory
+}
+
+interface PlanSubtreeOptions {
   readonly sourceDocument: DocumentState
   readonly sourceId: BlockId
-  readonly targetParentId: BlockId
-  readonly insertIndex: number
+  readonly targetDocument: DocumentState
   readonly idFactory: PasteBlockIdFactory
   readonly idCounter: { value: number }
+  readonly generatedIds: Set<BlockId>
 }
 
-interface PasteSubtreeResult {
-  readonly rootInsertedId: BlockId
-  readonly transactions: readonly Transaction[]
+function planClipboardPaste({
+  sourceDocument,
+  sourceChildren,
+  targetDocument,
+  idFactory,
+}: PlanClipboardPasteOptions): Result<readonly PlannedPasteSubtree[], PasteError> {
+  const idCounter = { value: 0 }
+  const generatedIds = new Set<BlockId>()
+  const plannedSubtrees: PlannedPasteSubtree[] = []
+
+  for (const sourceId of sourceChildren) {
+    const subtreeResult = planSubtree({
+      sourceDocument,
+      sourceId,
+      targetDocument,
+      idFactory,
+      idCounter,
+      generatedIds,
+    })
+
+    if (!subtreeResult.ok) {
+      return subtreeResult
+    }
+
+    plannedSubtrees.push(subtreeResult.value)
+  }
+
+  return ok(plannedSubtrees)
 }
 
-function pasteSubtree({
-  editor,
+function planSubtree({
   sourceDocument,
   sourceId,
-  targetParentId,
-  insertIndex,
+  targetDocument,
   idFactory,
   idCounter,
-}: PasteSubtreeState): Result<PasteSubtreeResult, PasteError> {
+  generatedIds,
+}: PlanSubtreeOptions): Result<PlannedPasteSubtree, PasteError> {
   const sourceBlock = sourceDocument.blocks[sourceId]
   if (sourceBlock === undefined) {
     return {
@@ -230,21 +272,124 @@ function pasteSubtree({
     }
   }
 
-  const rootInsertedId = idFactory({
+  const rootInsertedIdResult = createClipboardPasteBlockId({
+    idFactory,
     index: idCounter.value,
     text: getBlockText(sourceBlock),
-    kind: VETRA_BLOCK_CLIPBOARD_MIME_TYPE,
   })
+  if (!rootInsertedIdResult.ok) {
+    return rootInsertedIdResult
+  }
+
+  const rootInsertedId = rootInsertedIdResult.value
   idCounter.value += 1
 
-  const insertResult = editor.dispatch({
-    type: 'insertBlock',
-    parentId: targetParentId,
-    index: insertIndex,
+  if (generatedIds.has(rootInsertedId)) {
+    return {
+      ok: false,
+      error: {
+        code: 'pasteDuplicateBlockId',
+        message: `Clipboard paste id factory produced duplicate block id "${rootInsertedId}".`,
+      },
+    }
+  }
+
+  if (targetDocument.blocks[rootInsertedId] !== undefined) {
+    return {
+      ok: false,
+      error: {
+        code: 'pasteBlockAlreadyExists',
+        message: `Clipboard paste id factory produced existing block id "${rootInsertedId}".`,
+      },
+    }
+  }
+
+  generatedIds.add(rootInsertedId)
+
+  const childPlans: PlannedPasteSubtree[] = []
+  for (const sourceChildId of getBlockChildren(sourceDocument, sourceId)) {
+    const childResult = planSubtree({
+      sourceDocument,
+      sourceId: sourceChildId,
+      targetDocument,
+      idFactory,
+      idCounter,
+      generatedIds,
+    })
+    if (!childResult.ok) {
+      return childResult
+    }
+
+    childPlans.push(childResult.value)
+  }
+
+  return ok({
+    insertedId: rootInsertedId,
     block: {
       ...sourceBlock,
       id: rootInsertedId,
     },
+    children: childPlans,
+  })
+}
+
+function createClipboardPasteBlockId({
+  idFactory,
+  index,
+  text,
+}: {
+  readonly idFactory: PasteBlockIdFactory
+  readonly index: number
+  readonly text: string
+}): Result<BlockId, PasteError> {
+  try {
+    return ok(
+      idFactory({
+        index,
+        text,
+        kind: VETRA_BLOCK_CLIPBOARD_MIME_TYPE,
+      }),
+    )
+  } catch (cause) {
+    const message =
+      cause instanceof Error && cause.message.length > 0
+        ? cause.message
+        : 'Clipboard paste id factory failed.'
+
+    return {
+      ok: false,
+      error: {
+        code: 'pasteStrategyFailed',
+        message,
+        cause,
+      },
+    }
+  }
+}
+
+interface PastePlannedSubtreeState {
+  readonly editor: EditorRuntime
+  readonly subtree: PlannedPasteSubtree
+  readonly targetParentId: BlockId
+  readonly insertIndex: number
+}
+
+interface PasteSubtreeResult {
+  readonly rootInsertedId: BlockId
+  readonly transactions: readonly Transaction[]
+}
+
+function pastePlannedSubtree({
+  editor,
+  subtree,
+  targetParentId,
+  insertIndex,
+}: PastePlannedSubtreeState): Result<PasteSubtreeResult, PasteError> {
+  const insertResult = editor.dispatch({
+    type: 'insertBlock',
+    parentId: targetParentId,
+    index: insertIndex,
+    block: subtree.block,
   })
   if (!insertResult.ok) {
     return {
@@ -255,15 +400,12 @@ function pasteSubtree({
 
   const childTransactions: Transaction[] = [insertResult.value]
   let childInsertionIndex = 0
-  for (const sourceChildId of getBlockChildren(sourceDocument, sourceId)) {
-    const childResult = pasteSubtree({
+  for (const childSubtree of subtree.children) {
+    const childResult = pastePlannedSubtree({
       editor,
-      sourceDocument,
-      sourceId: sourceChildId,
-      targetParentId: rootInsertedId,
+      subtree: childSubtree,
+      targetParentId: subtree.insertedId,
       insertIndex: childInsertionIndex,
-      idFactory,
-      idCounter,
     })
     if (!childResult.ok) {
       return childResult
@@ -274,7 +416,7 @@ function pasteSubtree({
   }
 
   return ok({
-    rootInsertedId,
+    rootInsertedId: subtree.insertedId,
     transactions: childTransactions,
   })
 }

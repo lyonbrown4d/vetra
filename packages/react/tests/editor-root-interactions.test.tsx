@@ -350,6 +350,92 @@ describe('EditorRoot integrated interactions', () => {
     }
   })
 
+  it('keeps change notifications after replacing the initial document', () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const changes: DocumentState[] = []
+    const firstDocument: DocumentState = {
+      ...createDocument({
+        id: 'first-doc',
+        blocks: [paragraph('old-block', 'Old')],
+      }),
+      version: 2,
+    }
+    const secondDocument = createDocument({
+      id: 'second-doc',
+      blocks: [paragraph('block-a', 'Anchor')],
+    })
+
+    try {
+      act(() => {
+        root.render(
+          <EditorRoot
+            blocks={basicTestBlocks}
+            initialValue={firstDocument}
+            onChange={(nextDocument) => {
+              changes.push(nextDocument)
+            }}
+          />,
+        )
+      })
+      act(() => {
+        root.render(
+          <EditorRoot
+            blocks={basicTestBlocks}
+            initialValue={secondDocument}
+            onChange={(nextDocument) => {
+              changes.push(nextDocument)
+            }}
+          />,
+        )
+      })
+      act(() => {
+        getButton(
+          container,
+          '[data-vetra-block-control-block-id="block-a"][data-vetra-block-control="insert-after"]',
+        ).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+
+      expect(changes).toHaveLength(1)
+      expect(changes[0]?.id).toBe('second-doc')
+      expect(changes[0]?.version).toBe(2)
+      expect(changes[0]?.children.root).toHaveLength(2)
+    } finally {
+      unmountRoot(root)
+      container.remove()
+    }
+  })
+
+  it('inserts from slash menu when crypto.randomUUID is unavailable', () => {
+    withCryptoWithoutRandomUUID(() => {
+      const rendered = renderEditor(
+        createDocument({
+          id: 'doc',
+          blocks: [paragraph('block-a', 'Anchor')],
+        }),
+      )
+
+      try {
+        clickBlock(rendered.container, 'block-a')
+        pressEditorKey(rendered.container, '/')
+        act(() => {
+          getButton(rendered.container, '[data-vetra-slash-menu-item="quote"]').dispatchEvent(
+            new MouseEvent('click', { bubbles: true }),
+          )
+        })
+
+        const rootChildren = rendered.latestDocument.children.root ?? []
+        const insertedBlockId = expectDefined(rootChildren[1])
+
+        expect(insertedBlockId).toMatch(/^slash-local-/)
+        expect(rendered.latestDocument.blocks[insertedBlockId]?.type).toBe('quote')
+      } finally {
+        rendered.cleanup()
+      }
+    })
+  })
+
   it('inserts an empty paragraph from the block gutter plus button and activates it', async () => {
     const rendered = renderEditor(
       createDocument({
@@ -383,6 +469,49 @@ describe('EditorRoot integrated interactions', () => {
       expect(document.activeElement).toBe(getActiveEditableBlock(rendered.container))
     } finally {
       rendered.cleanup()
+    }
+  })
+
+  it('preserves root behavior when callers provide a custom className', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    let latestDocument = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'Anchor')],
+    })
+
+    try {
+      act(() => {
+        root.render(
+          <EditorRoot
+            blocks={basicTestBlocks}
+            className="custom-vetra-shell"
+            initialValue={latestDocument}
+            onChange={(nextDocument) => {
+              latestDocument = nextDocument
+            }}
+          />,
+        )
+      })
+
+      expect(getEditorRoot(container).classList.contains('custom-vetra-shell')).toBe(true)
+
+      act(() => {
+        getButton(
+          container,
+          '[data-vetra-block-control-block-id="block-a"][data-vetra-block-control="insert-after"]',
+        ).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+
+      const insertedBlockId = expectDefined((latestDocument.children.root ?? [])[1])
+
+      await waitForScheduledFocus()
+      expect(getBlockShell(container, insertedBlockId).dataset.active).toBe('true')
+      expect(document.activeElement).toBe(getActiveEditableBlock(container))
+    } finally {
+      unmountRoot(root)
+      container.remove()
     }
   })
 
@@ -803,6 +932,25 @@ function createClipboardEvent(
   })
 
   return event as ClipboardEvent
+}
+
+function withCryptoWithoutRandomUUID(run: () => void): void {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    value: {},
+  })
+
+  try {
+    run()
+  } finally {
+    if (originalDescriptor === undefined) {
+      Reflect.deleteProperty(globalThis, 'crypto')
+    } else {
+      Object.defineProperty(globalThis, 'crypto', originalDescriptor)
+    }
+  }
 }
 
 async function waitForScheduledFocus(): Promise<void> {
