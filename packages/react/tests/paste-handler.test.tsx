@@ -99,6 +99,77 @@ describe('paste handler', () => {
     expect(blockText(editor.getState().document.blocks['paste-2'])).toBe('Second')
   })
 
+  it('records multi paragraph plain text paste as one undo step', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('anchor', 'Anchor'), paragraph('tail', 'Tail')],
+    })
+    const editor = createEditor(createEditorState(document))
+    const handlePaste = createPasteHandler({
+      editor,
+      target: { referenceBlockId: 'anchor' },
+      idFactory: ({ index }) => `paste-${String(index + 1)}`,
+    })
+
+    const result = expectPasteOk(handlePaste({ text: 'First\n\nSecond' }))
+
+    expect(result.insertedBlockIds).toEqual(['paste-1', 'paste-2'])
+    expect(result.transactions).toHaveLength(1)
+    expect(editor.getState().document.children.root).toEqual([
+      'anchor',
+      'paste-1',
+      'paste-2',
+      'tail',
+    ])
+
+    const undoResult = editor.undo()
+
+    expect(undoResult.ok).toBe(true)
+    expect(editor.getState().document.children.root).toEqual(['anchor', 'tail'])
+    expect(editor.getState().document.blocks['paste-1']).toBeUndefined()
+    expect(editor.getState().document.blocks['paste-2']).toBeUndefined()
+  })
+
+  it('replaces target blocks while inserting a paste fragment as one undo step', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [
+        paragraph('before', 'Before'),
+        paragraph('replace-a', 'Replace A'),
+        paragraph('replace-b', 'Replace B'),
+        paragraph('after', 'After'),
+      ],
+    })
+    const editor = createEditor(createEditorState(document))
+    const handlePaste = createPasteHandler({
+      editor,
+      target: {
+        referenceBlockId: 'replace-a',
+        placement: 'before',
+        replaceBlockIds: ['replace-a', 'replace-b'],
+      },
+      idFactory: ({ index }) => `paste-${String(index + 1)}`,
+    })
+
+    const result = expectPasteOk(handlePaste({ text: 'Inserted' }))
+
+    expect(result.insertedBlockIds).toEqual(['paste-1'])
+    expect(result.transactions).toHaveLength(1)
+    expect(editor.getState().document.children.root).toEqual(['before', 'paste-1', 'after'])
+    expect(editor.getState().document.blocks['replace-a']).toBeUndefined()
+    expect(editor.getState().document.blocks['replace-b']).toBeUndefined()
+
+    const undoResult = editor.undo()
+
+    expect(undoResult.ok).toBe(true)
+    expect(editor.getState().document.children.root).toEqual([
+      'before',
+      'replace-a',
+      'replace-b',
+      'after',
+    ])
+  })
+
   it('treats empty paste as a no-op', () => {
     const document = createDocument({
       id: 'doc',
@@ -241,5 +312,91 @@ describe('paste handler', () => {
       expect(result.error.message).toBe('Cannot allocate paste id.')
     }
     expect(editor.getState().document).toBe(document)
+  })
+
+  it('pastes a nested clipboard document as one undo step', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('anchor', 'Anchor'), paragraph('tail', 'Tail')],
+    })
+    const editor = createEditor(createEditorState(document))
+    const clipboardRootId = '__clipboard-root__'
+    const sourceDocument: DocumentState = {
+      id: 'clipboard-doc',
+      version: 1,
+      rootId: clipboardRootId,
+      blocks: {
+        [clipboardRootId]: { id: clipboardRootId, type: 'root' },
+        'source-parent': paragraph('source-parent', 'Parent'),
+        'source-child': paragraph('source-child', 'Child'),
+      },
+      children: {
+        [clipboardRootId]: ['source-parent'],
+        'source-parent': ['source-child'],
+        'source-child': [],
+      },
+    }
+
+    const result = expectPasteOk(
+      pasteClipboardPayloadIntoEditor({
+        editor,
+        target: { referenceBlockId: 'anchor' },
+        payload: stringifyDocument(sourceDocument),
+        idFactory: ({ index }) => `paste-${String(index)}`,
+      }),
+    )
+
+    expect(result.insertedBlockIds).toEqual(['paste-0'])
+    expect(result.transactions).toHaveLength(1)
+    expect(editor.getState().document.children.root).toEqual(['anchor', 'paste-0', 'tail'])
+    expect(editor.getState().document.children['paste-0']).toEqual(['paste-1'])
+    expect(blockText(editor.getState().document.blocks['paste-0'])).toBe('Parent')
+    expect(blockText(editor.getState().document.blocks['paste-1'])).toBe('Child')
+
+    const undoResult = editor.undo()
+
+    expect(undoResult.ok).toBe(true)
+    expect(editor.getState().document.children.root).toEqual(['anchor', 'tail'])
+    expect(editor.getState().document.blocks['paste-0']).toBeUndefined()
+    expect(editor.getState().document.blocks['paste-1']).toBeUndefined()
+  })
+
+  it('preserves source order when structured clipboard paste inserts multiple blocks', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('anchor', 'Anchor'), paragraph('tail', 'Tail')],
+    })
+    const editor = createEditor(createEditorState(document))
+    const clipboardRootId = '__clipboard-root__'
+    const sourceDocument: DocumentState = {
+      id: 'clipboard-doc',
+      version: 1,
+      rootId: clipboardRootId,
+      blocks: {
+        [clipboardRootId]: { id: clipboardRootId, type: 'root' },
+        'source-first': paragraph('source-first', 'First'),
+        'source-second': paragraph('source-second', 'Second'),
+      },
+      children: {
+        [clipboardRootId]: ['source-first', 'source-second'],
+        'source-first': [],
+        'source-second': [],
+      },
+    }
+
+    const result = expectPasteOk(
+      pasteClipboardPayloadIntoEditor({
+        editor,
+        target: { referenceBlockId: 'anchor' },
+        payload: stringifyDocument(sourceDocument),
+        idFactory: ({ index }) => `copy-${String(index)}`,
+      }),
+    )
+
+    expect(result.insertedBlockIds).toEqual(['copy-0', 'copy-1'])
+    expect(result.transactions).toHaveLength(1)
+    expect(editor.getState().document.children.root).toEqual(['anchor', 'copy-0', 'copy-1', 'tail'])
+    expect(blockText(editor.getState().document.blocks['copy-0'])).toBe('First')
+    expect(blockText(editor.getState().document.blocks['copy-1'])).toBe('Second')
   })
 })

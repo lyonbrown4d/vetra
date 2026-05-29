@@ -17,12 +17,15 @@ import {
   type DocumentState,
   type EditorRuntime,
 } from '@vetra/core'
+import { htmlToDocument } from '@vetra/import-html'
 import { useEditor } from '@vetra/react/context/EditorContext'
 import { EditorProvider } from '@vetra/react/EditorProvider'
 import { BlockToolbar } from '@vetra/react/toolbar'
 import { SlashMenu } from '@vetra/react/menu'
 import {
   createClipboardPayloadFromSelection,
+  createDocumentPasteStrategy,
+  htmlPasteKind,
   pasteClipboardPayloadIntoEditor,
   pasteIntoEditor,
   VETRA_BLOCK_CLIPBOARD_MIME_TYPE,
@@ -89,6 +92,16 @@ interface SlashMenuState {
   readonly query: string
   readonly anchorElement?: HTMLElement | null
 }
+
+const htmlClipboardMimeType = 'text/html'
+const htmlPasteRootId = '__vetra-html-paste-root__'
+const htmlPasteStrategy = createDocumentPasteStrategy((input, context) =>
+  htmlToDocument(input.text, {
+    rootId: htmlPasteRootId,
+    generateBlockId: ({ ordinal, sourceTag }) =>
+      context.idFactory({ index: ordinal - 1, text: sourceTag, kind: htmlPasteKind }),
+  }),
+)
 
 function EditorSurface(props: EditorSurfaceProps) {
   const editor = useEditor()
@@ -318,16 +331,33 @@ function EditorSurface(props: EditorSurfaceProps) {
         return
       }
 
+      const pasteTarget = createPasteTarget(editor, activeBlockId)
       const clipboardText = event.clipboardData.getData('text/plain')
+      const clipboardHtml = event.clipboardData.getData(htmlClipboardMimeType)
       const customPayload = event.clipboardData.getData(VETRA_BLOCK_CLIPBOARD_MIME_TYPE)
       if (customPayload.length > 0) {
         const result = pasteClipboardPayloadIntoEditor({
           editor,
-          target: { referenceBlockId: activeBlockId },
+          target: pasteTarget,
           payload: customPayload,
           idFactory: ({ index }) => createAvailableBlockId(editor, `paste-${String(index + 1)}`),
         })
         if (result.ok) {
+          event.preventDefault()
+          focusAfterPaste(editor, result, surfaceRef.current)
+          return
+        }
+      }
+
+      if (clipboardHtml.length > 0) {
+        const result = pasteIntoEditor({
+          editor,
+          target: pasteTarget,
+          input: { text: clipboardHtml, kind: htmlPasteKind },
+          idFactory: ({ index }) => createAvailableBlockId(editor, `paste-${String(index + 1)}`),
+          strategy: htmlPasteStrategy,
+        })
+        if (result.ok && result.value.handled) {
           event.preventDefault()
           focusAfterPaste(editor, result, surfaceRef.current)
           return
@@ -340,7 +370,7 @@ function EditorSurface(props: EditorSurfaceProps) {
 
       const result = pasteIntoEditor({
         editor,
-        target: { referenceBlockId: activeBlockId },
+        target: pasteTarget,
         input: { text: clipboardText },
         idFactory: ({ index }) => createAvailableBlockId(editor, `paste-${String(index + 1)}`),
       })
@@ -452,6 +482,34 @@ function getActiveBlockId(editor: EditorRuntime): BlockId | undefined {
       return selection.blockId
     case 'range-block':
       return selection.focusBlockId
+  }
+}
+
+function createPasteTarget(
+  editor: EditorRuntime,
+  fallbackReferenceBlockId: BlockId,
+): {
+  readonly referenceBlockId: BlockId
+  readonly placement?: 'before'
+  readonly replaceBlockIds?: readonly BlockId[]
+} {
+  const state = editor.getState()
+  const selection = normalizeSelection(state.document, state.selection)
+
+  if (selection.type !== 'range-block') {
+    return { referenceBlockId: fallbackReferenceBlockId }
+  }
+
+  const selectedBlockIds = getSelectedBlockIds(state.document, selection)
+  const firstSelectedBlockId = selectedBlockIds[0]
+  if (firstSelectedBlockId === undefined) {
+    return { referenceBlockId: fallbackReferenceBlockId }
+  }
+
+  return {
+    referenceBlockId: firstSelectedBlockId,
+    placement: 'before',
+    replaceBlockIds: selectedBlockIds,
   }
 }
 

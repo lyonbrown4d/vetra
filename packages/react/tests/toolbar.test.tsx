@@ -19,6 +19,7 @@ import {
   createConvertBlockTypeCommand,
   EditorProvider,
   useBlockToolbar,
+  type BlockToolbarProps,
   type BlockToolbarState,
 } from '@vetra/react'
 
@@ -64,6 +65,26 @@ function nestedDocument(): DocumentState {
   }
 }
 
+function flatToolbarDocument(): DocumentState {
+  return {
+    id: 'doc',
+    version: 1,
+    rootId: 'root',
+    blocks: {
+      root: { id: 'root', type: 'root' },
+      'block-a': paragraph('block-a', 'A'),
+      'block-b': paragraph('block-b', 'B'),
+      'block-c': paragraph('block-c', 'C'),
+    },
+    children: {
+      root: ['block-a', 'block-b', 'block-c'],
+      'block-a': [],
+      'block-b': [],
+      'block-c': [],
+    },
+  }
+}
+
 function createRecordingEditor(editor: EditorRuntime, commands: EditorCommand[]): EditorRuntime {
   return {
     dispatch(command) {
@@ -92,7 +113,7 @@ function createRecordingEditor(editor: EditorRuntime, commands: EditorCommand[])
   }
 }
 
-function renderToolbar(editor: EditorRuntime) {
+function renderToolbar(editor: EditorRuntime, props: Partial<BlockToolbarProps> = {}) {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -100,7 +121,7 @@ function renderToolbar(editor: EditorRuntime) {
   act(() => {
     root.render(
       <EditorProvider blocks={[]} editor={editor}>
-        <BlockToolbar />
+        <BlockToolbar {...props} />
       </EditorProvider>,
     )
   })
@@ -157,6 +178,15 @@ function getToolbarButton(container: Element, itemId: string): HTMLButtonElement
   return button
 }
 
+function getToolbarActionButton(container: Element, actionId: string): HTMLButtonElement {
+  const button = container.querySelector(`[data-vetra-toolbar-action="${actionId}"]`)
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`Expected toolbar action button "${actionId}" to render.`)
+  }
+
+  return button
+}
+
 function expectCommand(
   command: ReturnType<typeof createConvertBlockTypeCommand>,
 ): Exclude<ReturnType<typeof createConvertBlockTypeCommand>, undefined> {
@@ -192,6 +222,12 @@ describe('Block toolbar state', () => {
         active: true,
         disabled: false,
       })
+      expect(snapshot?.selectedBlockIds).toEqual(['block-a'])
+      expect(snapshot?.actionItems.find((item) => item.id === 'duplicate-selection')).toMatchObject(
+        {
+          disabled: false,
+        },
+      )
 
       act(() => {
         editor.dispatch({
@@ -211,6 +247,45 @@ describe('Block toolbar state', () => {
         active: true,
         disabled: false,
       })
+      expect(snapshot?.selectedBlockIds).toEqual([])
+      expect(snapshot?.actionItems.find((item) => item.id === 'duplicate-selection')).toMatchObject(
+        {
+          disabled: true,
+        },
+      )
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('reports range action availability for contiguous sibling selections', () => {
+    const editor = createEditor({
+      document: flatToolbarDocument(),
+      selection: { type: 'range-block', anchorBlockId: 'block-a', focusBlockId: 'block-b' },
+    })
+    let snapshot: BlockToolbarState | undefined
+    const cleanup = renderToolbarProbe(editor, (nextSnapshot) => {
+      snapshot = nextSnapshot
+    })
+
+    try {
+      expect(snapshot?.selectedBlockIds).toEqual(['block-a', 'block-b'])
+      expect(snapshot?.actionItems.find((item) => item.id === 'delete-selection')).toMatchObject({
+        disabled: false,
+      })
+      expect(snapshot?.actionItems.find((item) => item.id === 'duplicate-selection')).toMatchObject(
+        {
+          disabled: false,
+        },
+      )
+      expect(snapshot?.actionItems.find((item) => item.id === 'move-selection-up')).toMatchObject({
+        disabled: true,
+      })
+      expect(snapshot?.actionItems.find((item) => item.id === 'move-selection-down')).toMatchObject(
+        {
+          disabled: false,
+        },
+      )
     } finally {
       cleanup()
     }
@@ -303,6 +378,99 @@ describe('BlockToolbar', () => {
       })
       expect(recordingEditor.getState().document.children['block-a']).toEqual(['child-a'])
       expect(recordingEditor.getState().document.blocks['child-a']?.id).toBe('child-a')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('dispatches duplicateBlocks for the selected range action', () => {
+    const editor = createEditor({
+      document: nestedDocument(),
+      selection: { type: 'range-block', anchorBlockId: 'block-a', focusBlockId: 'block-b' },
+    })
+    const commands: EditorCommand[] = []
+    const recordingEditor = createRecordingEditor(editor, commands)
+    const rendered = renderToolbar(recordingEditor, {
+      duplicateBlockIdFactory: ({ sourceBlockId }) => `copy-${sourceBlockId}`,
+    })
+
+    try {
+      act(() => {
+        getToolbarActionButton(rendered.container, 'duplicate-selection').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+
+      expect(commands).toEqual([
+        {
+          type: 'duplicateBlocks',
+          blockIds: ['block-a', 'block-b'],
+          placement: 'after',
+          idMap: {
+            'block-a': 'copy-block-a',
+            'child-a': 'copy-child-a',
+            'block-b': 'copy-block-b',
+          },
+          selection: {
+            type: 'range-block',
+            anchorBlockId: 'copy-block-a',
+            focusBlockId: 'copy-block-b',
+          },
+        },
+      ])
+      expect(recordingEditor.getState().document.children.root).toEqual([
+        'block-a',
+        'block-b',
+        'copy-block-a',
+        'copy-block-b',
+      ])
+      expect(recordingEditor.getState().document.children['copy-block-a']).toEqual(['copy-child-a'])
+      expect(recordingEditor.getState().selection).toEqual({
+        type: 'range-block',
+        anchorBlockId: 'copy-block-a',
+        focusBlockId: 'copy-block-b',
+      })
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('dispatches moveBlocks for the selected range action', () => {
+    const selection = {
+      type: 'range-block',
+      anchorBlockId: 'block-a',
+      focusBlockId: 'block-b',
+    } as const
+    const editor = createEditor({
+      document: flatToolbarDocument(),
+      selection,
+    })
+    const commands: EditorCommand[] = []
+    const recordingEditor = createRecordingEditor(editor, commands)
+    const rendered = renderToolbar(recordingEditor)
+
+    try {
+      act(() => {
+        getToolbarActionButton(rendered.container, 'move-selection-down').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+
+      expect(commands).toEqual([
+        {
+          type: 'moveBlocks',
+          blockIds: ['block-a', 'block-b'],
+          toParentId: 'root',
+          toIndex: 1,
+          selection,
+        },
+      ])
+      expect(recordingEditor.getState().document.children.root).toEqual([
+        'block-c',
+        'block-a',
+        'block-b',
+      ])
+      expect(recordingEditor.getState().selection).toEqual(selection)
     } finally {
       rendered.cleanup()
     }

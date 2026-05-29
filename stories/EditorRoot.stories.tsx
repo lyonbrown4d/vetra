@@ -168,6 +168,25 @@ const rangeBlockSelection: DocumentSelection = {
   focusBlockId: 'range-focus',
 }
 
+const structuredClipboardDocument = createDocument({
+  id: 'storybook-structured-clipboard',
+  blocks: [
+    createHeadingBlock('clipboard-title', 2, 'Structured clipboard range'),
+    createParagraphBlock(
+      'clipboard-anchor',
+      'Copy should serialize this paragraph as a Vetra block payload.',
+    ),
+    createQuoteBlock('clipboard-focus', 'This quote should stay in source order with the range.'),
+    createCodeBlock('clipboard-target', 'Paste the copied range after this target block.', 'ts'),
+  ],
+})
+
+const structuredClipboardSelection: DocumentSelection = {
+  type: 'range-block',
+  anchorBlockId: 'clipboard-anchor',
+  focusBlockId: 'clipboard-focus',
+}
+
 const longContentDocument = createDocument({
   id: 'storybook-long-content',
   blocks: [
@@ -283,6 +302,54 @@ export const RangeSelected: Story = {
       className={editorClassName}
       initialSelection={rangeBlockSelection}
       initialValue={rangeSelectedDocument}
+    />
+  ),
+}
+
+export const ToolbarRangeActions: Story = {
+  args: {
+    blocks: basicBlocks,
+    className: editorClassName,
+    initialValue: rangeSelectedDocument,
+  },
+  name: 'Toolbar / Range actions',
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Acceptance state for the range toolbar. The selected sibling range enables delete, duplicate, move up, and move down actions while document changes still route through core commands.',
+      },
+    },
+  },
+  render: () => (
+    <StoryEditorHarness
+      className={editorClassName}
+      initialSelection={rangeBlockSelection}
+      initialValue={rangeSelectedDocument}
+    />
+  ),
+}
+
+export const StructuredClipboardRange: Story = {
+  args: {
+    blocks: basicBlocks,
+    className: editorClassName,
+    initialValue: structuredClipboardDocument,
+  },
+  name: 'Structured clipboard / Range',
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Acceptance state for block-range copy/cut. React owns browser clipboard events and writes Vetra block MIME plus plain text while core only receives document commands.',
+      },
+    },
+  },
+  render: () => (
+    <StoryEditorHarness
+      className={editorClassName}
+      initialSelection={structuredClipboardSelection}
+      initialValue={structuredClipboardDocument}
     />
   ),
 }

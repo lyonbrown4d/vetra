@@ -44,6 +44,14 @@ const alias: ViteAliasEntry[] = [
     ),
   },
   {
+    find: /^@vetra\/export-html\/(.+)$/,
+    replacement: fileURLToPath(new URL('../packages/export-html/src/$1', import.meta.url)),
+  },
+  {
+    find: '@vetra/export-html',
+    replacement: fileURLToPath(new URL('../packages/export-html/src/index.ts', import.meta.url)),
+  },
+  {
     find: /^@vetra\/export-plain-text\/(.+)$/,
     replacement: fileURLToPath(new URL('../packages/export-plain-text/src/$1', import.meta.url)),
   },
@@ -62,6 +70,14 @@ const alias: ViteAliasEntry[] = [
     replacement: fileURLToPath(
       new URL('../packages/import-markdown/src/index.ts', import.meta.url),
     ),
+  },
+  {
+    find: /^@vetra\/import-html\/(.+)$/,
+    replacement: fileURLToPath(new URL('../packages/import-html/src/$1', import.meta.url)),
+  },
+  {
+    find: '@vetra/import-html',
+    replacement: fileURLToPath(new URL('../packages/import-html/src/index.ts', import.meta.url)),
   },
   {
     find: /^@vetra\/import-plain-text\/(.+)$/,

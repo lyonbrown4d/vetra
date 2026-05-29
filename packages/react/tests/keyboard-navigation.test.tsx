@@ -7,18 +7,24 @@ import {
   createEditor,
   createEditorState,
   createTextInlineContent,
+  ok,
+  type EditorCommand,
+  type EditorState,
   type DocBlock,
   type DocumentState,
   type EditorRuntime,
   type InlineContent,
   type ParagraphBlock,
+  type Transaction,
 } from '@vetra/core'
 import {
   BlockRenderer,
   collapseSelectionToBlock,
   defineReactBlock,
+  duplicateSelectedBlocks,
   EditorProvider,
   EditorRoot,
+  moveSelectedBlocks,
   redoEditorHistory,
   selectAllTopLevelBlocks,
   deleteSelectedBlocks,
@@ -82,6 +88,95 @@ function createThreeBlockDocument(): DocumentState {
     id: 'doc',
     blocks: [paragraph('block-a', 'A'), paragraph('block-b', 'B'), paragraph('block-c', 'C')],
   })
+}
+
+function createFourBlockDocument(): DocumentState {
+  return createDocument({
+    id: 'doc',
+    blocks: [
+      paragraph('block-a', 'A'),
+      paragraph('block-b', 'B'),
+      paragraph('block-c', 'C'),
+      paragraph('block-d', 'D'),
+    ],
+  })
+}
+
+function createNestedRangeDocument(): DocumentState {
+  const document = createDocument({
+    id: 'doc',
+    blocks: [
+      paragraph('block-a', 'A'),
+      paragraph('block-b', 'B'),
+      paragraph('block-b-child', 'Child'),
+      paragraph('block-c', 'C'),
+    ],
+  })
+
+  return {
+    ...document,
+    children: {
+      ...document.children,
+      root: ['block-a', 'block-b', 'block-c'],
+      'block-b': ['block-b-child'],
+      'block-b-child': [],
+    },
+  }
+}
+
+function createActionProbeEditor(
+  document: DocumentState,
+  selection: EditorState['selection'],
+): {
+  readonly editor: EditorRuntime
+  readonly commands: readonly EditorCommand[]
+} {
+  let state: EditorState = { document, selection }
+  const commands: EditorCommand[] = []
+
+  const createTransaction = (command: EditorCommand, before: EditorState): Transaction => ({
+    command,
+    before,
+    after: state,
+    changedBlockIds: [],
+  })
+
+  return {
+    commands,
+    editor: {
+      dispatch(command) {
+        commands.push(command)
+        const before = state
+
+        if ('selection' in command) {
+          state = {
+            ...state,
+            selection: command.selection,
+          }
+        }
+
+        return ok(createTransaction(command, before))
+      },
+      undo() {
+        throw new Error('Unexpected undo call in action helper probe.')
+      },
+      redo() {
+        throw new Error('Unexpected redo call in action helper probe.')
+      },
+      canUndo() {
+        return false
+      },
+      canRedo() {
+        return false
+      },
+      getState() {
+        return state
+      },
+      subscribe() {
+        return () => undefined
+      },
+    },
+  }
 }
 
 function renderEditor(editorDocument: DocumentState) {
@@ -274,6 +369,133 @@ describe('keyboard navigation', () => {
     })
     expect(editor.getState().document.children.root).toEqual(['block-c'])
     expect(editor.getState().selection).toEqual({ type: 'block', blockId: 'block-c' })
+  })
+
+  it('dispatches duplicateBlocks for a range selection with a full subtree id map', () => {
+    const { editor, commands } = createActionProbeEditor(createNestedRangeDocument(), {
+      type: 'range-block',
+      anchorBlockId: 'block-a',
+      focusBlockId: 'block-b',
+    })
+    const contexts: {
+      readonly sourceBlockId: string
+      readonly sourceRootBlockId: string
+      readonly index: number
+      readonly text: string
+      readonly isSelectedRoot: boolean
+    }[] = []
+
+    const result = duplicateSelectedBlocks(editor, (context) => {
+      contexts.push({
+        sourceBlockId: context.sourceBlockId,
+        sourceRootBlockId: context.sourceRootBlockId,
+        index: context.index,
+        text: context.text,
+        isSelectedRoot: context.isSelectedRoot,
+      })
+
+      return `copy-${context.sourceBlockId}`
+    })
+
+    expect(result).toEqual({
+      sourceBlockIds: ['block-a', 'block-b'],
+      duplicatedBlockIds: ['copy-block-a', 'copy-block-b'],
+      idMap: {
+        'block-a': 'copy-block-a',
+        'block-b': 'copy-block-b',
+        'block-b-child': 'copy-block-b-child',
+      },
+      selection: {
+        type: 'range-block',
+        anchorBlockId: 'copy-block-a',
+        focusBlockId: 'copy-block-b',
+      },
+      focusBlockId: 'copy-block-b',
+    })
+    expect(commands).toEqual([
+      {
+        type: 'duplicateBlocks',
+        blockIds: ['block-a', 'block-b'],
+        placement: 'after',
+        idMap: {
+          'block-a': 'copy-block-a',
+          'block-b': 'copy-block-b',
+          'block-b-child': 'copy-block-b-child',
+        },
+        selection: {
+          type: 'range-block',
+          anchorBlockId: 'copy-block-a',
+          focusBlockId: 'copy-block-b',
+        },
+      },
+    ])
+    expect(contexts).toEqual([
+      {
+        sourceBlockId: 'block-a',
+        sourceRootBlockId: 'block-a',
+        index: 0,
+        text: 'A',
+        isSelectedRoot: true,
+      },
+      {
+        sourceBlockId: 'block-b',
+        sourceRootBlockId: 'block-b',
+        index: 1,
+        text: 'B',
+        isSelectedRoot: true,
+      },
+      {
+        sourceBlockId: 'block-b-child',
+        sourceRootBlockId: 'block-b',
+        index: 2,
+        text: 'Child',
+        isSelectedRoot: false,
+      },
+    ])
+    expect(editor.getState().selection).toEqual({
+      type: 'range-block',
+      anchorBlockId: 'copy-block-a',
+      focusBlockId: 'copy-block-b',
+    })
+  })
+
+  it('dispatches moveBlocks for a range selection and keeps the selection', () => {
+    const selection = {
+      type: 'range-block',
+      anchorBlockId: 'block-b',
+      focusBlockId: 'block-c',
+    } as const
+    const { editor, commands } = createActionProbeEditor(createFourBlockDocument(), selection)
+
+    expect(moveSelectedBlocks(editor, 'next')).toEqual({
+      movedBlockIds: ['block-b', 'block-c'],
+      direction: 'next',
+      toParentId: 'root',
+      toIndex: 2,
+      selection,
+      focusBlockId: 'block-c',
+    })
+    expect(commands).toEqual([
+      {
+        type: 'moveBlocks',
+        blockIds: ['block-b', 'block-c'],
+        toParentId: 'root',
+        toIndex: 2,
+        selection,
+      },
+    ])
+    expect(editor.getState().selection).toEqual(selection)
+  })
+
+  it('does not dispatch moveBlocks when the selected range cannot move further', () => {
+    const { editor, commands } = createActionProbeEditor(createThreeBlockDocument(), {
+      type: 'range-block',
+      anchorBlockId: 'block-a',
+      focusBlockId: 'block-b',
+    })
+
+    expect(moveSelectedBlocks(editor, 'previous')).toBeUndefined()
+    expect(commands).toEqual([])
   })
 
   it('collapses text selection back to block selection for Escape handling', () => {

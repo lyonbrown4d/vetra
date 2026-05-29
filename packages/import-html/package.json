@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./htmlToDocument": {
+      "types": "./src/htmlToDocument.ts",
+      "import": "./src/htmlToDocument.ts"
     }
   },
   "scripts": {

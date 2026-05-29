@@ -17,12 +17,15 @@ import type {
   DeleteBlockCommand,
   DeleteBlocksCommand,
   DuplicateBlockCommand,
+  DuplicateBlocksCommand,
   EditorCommand,
   InsertBlockAfterCommand,
   InsertBlockBeforeCommand,
+  InsertBlockFragmentCommand,
   InsertBlockCommand,
   MergeBlockCommand,
   MoveBlockCommand,
+  MoveBlocksCommand,
   SetSelectionCommand,
   SplitBlockCommand,
   UpdateBlockCommand,
@@ -37,6 +40,20 @@ interface PreparedBlockDeletion {
   readonly affectedParentIds: readonly BlockId[]
   readonly removedIds: readonly BlockId[]
   readonly removedIdSet: ReadonlySet<BlockId>
+}
+
+interface PreparedFragmentReplacement {
+  readonly removedIds: readonly BlockId[]
+  readonly removedIdSet: ReadonlySet<BlockId>
+  readonly parentChildrenWithoutReplacement: readonly BlockId[]
+}
+
+interface PreparedSiblingBlockRange {
+  readonly parentId: BlockId
+  readonly blockIds: readonly BlockId[]
+  readonly parentChildren: readonly BlockId[]
+  readonly firstIndex: number
+  readonly lastIndex: number
 }
 
 export function createEditorState(document: DocumentState): EditorState {
@@ -75,6 +92,8 @@ function applyCommand(
       return insertBlockBefore(state, command)
     case 'insertBlockAfter':
       return insertBlockAfter(state, command)
+    case 'insertBlockFragment':
+      return insertBlockFragment(state, command)
     case 'deleteBlock':
       return deleteBlock(state, command)
     case 'deleteBlocks':
@@ -83,8 +102,12 @@ function applyCommand(
       return updateBlock(state, command)
     case 'moveBlock':
       return moveBlock(state, command)
+    case 'moveBlocks':
+      return moveBlocks(state, command)
     case 'duplicateBlock':
       return duplicateBlock(state, command)
+    case 'duplicateBlocks':
+      return duplicateBlocks(state, command)
     case 'convertBlockType':
       return convertBlockType(state, command)
     case 'splitBlock':
@@ -130,6 +153,23 @@ function insertBlockAfter(
   command: InsertBlockAfterCommand,
 ): Result<CommandStateChange, CommandError> {
   return insertSiblingBlock(state, command.referenceBlockId, command.block, 'after')
+}
+
+function insertBlockFragment(
+  state: EditorState,
+  command: InsertBlockFragmentCommand,
+): Result<CommandStateChange, CommandError> {
+  return insertPreparedFragment(
+    state,
+    command.parentId,
+    command.index,
+    command.rootBlockIds,
+    command.blocks,
+    command.children,
+    'invalidBlockFragment',
+    command.replaceBlockIds,
+    command.selection,
+  )
 }
 
 function insertSiblingBlock(
@@ -557,6 +597,86 @@ function moveBlock(
   })
 }
 
+function moveBlocks(
+  state: EditorState,
+  command: MoveBlocksCommand,
+): Result<CommandStateChange, CommandError> {
+  const document = state.document
+  const rangeResult = prepareMoveBlockRange(document, command.blockIds)
+  if (!rangeResult.ok) {
+    return rangeResult
+  }
+
+  const movingRange = rangeResult.value
+  const targetChildren = document.children[command.toParentId]
+  if (document.blocks[command.toParentId] === undefined || targetChildren === undefined) {
+    return err({
+      code: 'invalidParent',
+      message: `Target parent "${command.toParentId}" does not exist.`,
+    })
+  }
+
+  for (const blockId of movingRange.blockIds) {
+    if (command.toParentId === blockId || isDescendantOf(document, command.toParentId, blockId)) {
+      return err({
+        code: 'invalidParent',
+        message: `Target parent "${command.toParentId}" is inside moving block "${blockId}".`,
+      })
+    }
+  }
+
+  const movingBlockIdSet = new Set(movingRange.blockIds)
+  const sourceChildren = movingRange.parentChildren.filter(
+    (childId) => !movingBlockIdSet.has(childId),
+  )
+  const targetChildrenWithoutMoving =
+    movingRange.parentId === command.toParentId
+      ? sourceChildren
+      : targetChildren.filter((childId) => !movingBlockIdSet.has(childId))
+
+  if (command.toIndex < 0 || command.toIndex > targetChildrenWithoutMoving.length) {
+    return err({
+      code: 'invalidIndex',
+      message: `Move index ${String(command.toIndex)} is outside the target parent children range.`,
+    })
+  }
+
+  const nextTargetChildren = [...targetChildrenWithoutMoving]
+  nextTargetChildren.splice(command.toIndex, 0, ...movingRange.blockIds)
+
+  const nextDocument: DocumentState = {
+    ...document,
+    children: {
+      ...document.children,
+      [movingRange.parentId]: sourceChildren,
+      [command.toParentId]: nextTargetChildren,
+    },
+    version: document.version + 1,
+  }
+
+  if (command.selection !== undefined) {
+    const invalidBlockId = findMissingSelectionBlockId(nextDocument, command.selection)
+    if (invalidBlockId !== undefined) {
+      return err({
+        code: 'invalidSelection',
+        message: `Selection references missing block "${invalidBlockId}".`,
+      })
+    }
+  }
+
+  return ok({
+    state: {
+      ...state,
+      document: nextDocument,
+      selection: command.selection ?? state.selection,
+    },
+    changedBlockIds:
+      movingRange.parentId === command.toParentId
+        ? [...movingRange.blockIds, movingRange.parentId]
+        : [...movingRange.blockIds, movingRange.parentId, command.toParentId],
+  })
+}
+
 function duplicateBlock(
   state: EditorState,
   command: DuplicateBlockCommand,
@@ -607,6 +727,39 @@ function duplicateBlock(
     code: 'invalidDuplicateSubtree',
     message: 'Duplicate block did not include duplicate block data.',
   })
+}
+
+function duplicateBlocks(
+  state: EditorState,
+  command: DuplicateBlocksCommand,
+): Result<CommandStateChange, CommandError> {
+  const duplicateRange = prepareDuplicateBlockRange(state.document, command.blockIds)
+  if (!duplicateRange.ok) {
+    return duplicateRange
+  }
+
+  const fragmentResult = prepareDuplicateFragment(
+    state.document,
+    duplicateRange.value.blockIds,
+    command.idMap,
+  )
+  if (!fragmentResult.ok) {
+    return fragmentResult
+  }
+
+  return insertPreparedFragment(
+    state,
+    duplicateRange.value.parentId,
+    command.placement === 'before'
+      ? duplicateRange.value.firstIndex
+      : duplicateRange.value.lastIndex + 1,
+    fragmentResult.value.rootBlockIds,
+    fragmentResult.value.blocks,
+    fragmentResult.value.children,
+    'invalidDuplicateSubtree',
+    undefined,
+    command.selection,
+  )
 }
 
 function duplicateBlockWithIdMap(
@@ -718,6 +871,292 @@ function duplicateLeafBlock(
   return insertBlockAt(state, siblingInsertion.parentId, block, siblingInsertion.index)
 }
 
+function prepareDuplicateBlockRange(
+  document: DocumentState,
+  blockIds: readonly BlockId[],
+): Result<PreparedSiblingBlockRange, CommandError> {
+  const requestedBlockIds = dedupeBlockIds(blockIds)
+  if (requestedBlockIds.length === 0) {
+    return err({
+      code: 'invalidDuplicateSubtree',
+      message: 'Duplicate blocks requires at least one source block id.',
+    })
+  }
+
+  const requestedBlockIdSet = new Set(requestedBlockIds)
+  for (const blockId of requestedBlockIds) {
+    if (blockId === document.rootId) {
+      return err({
+        code: 'cannotDuplicateRoot',
+        message: 'The root block cannot be duplicated.',
+      })
+    }
+
+    if (document.blocks[blockId] === undefined) {
+      return err({
+        code: 'blockNotFound',
+        message: `Block "${blockId}" does not exist.`,
+      })
+    }
+
+    const parentId = findParentId(document, blockId)
+    if (
+      parentId === undefined ||
+      document.blocks[parentId] === undefined ||
+      document.children[parentId] === undefined
+    ) {
+      return err({
+        code: 'invalidParent',
+        message: `Block "${blockId}" is not attached to the document tree.`,
+      })
+    }
+  }
+
+  return prepareSiblingBlockRange(
+    document,
+    requestedBlockIds.filter(
+      (blockId) => !hasRequestedAncestor(document, blockId, requestedBlockIdSet),
+    ),
+    true,
+  )
+}
+
+function prepareMoveBlockRange(
+  document: DocumentState,
+  blockIds: readonly BlockId[],
+): Result<PreparedSiblingBlockRange, CommandError> {
+  const requestedBlockIds = dedupeBlockIds(blockIds)
+  if (requestedBlockIds.length === 0) {
+    return err({
+      code: 'invalidIndex',
+      message: 'Move blocks requires at least one source block id.',
+    })
+  }
+
+  for (const blockId of requestedBlockIds) {
+    if (blockId === document.rootId) {
+      return err({
+        code: 'cannotMoveRoot',
+        message: 'The root block cannot be moved.',
+      })
+    }
+
+    if (document.blocks[blockId] === undefined) {
+      return err({
+        code: 'blockNotFound',
+        message: `Block "${blockId}" does not exist.`,
+      })
+    }
+
+    const parentId = findParentId(document, blockId)
+    if (
+      parentId === undefined ||
+      document.blocks[parentId] === undefined ||
+      document.children[parentId] === undefined
+    ) {
+      return err({
+        code: 'invalidParent',
+        message: `Block "${blockId}" is not attached to the document tree.`,
+      })
+    }
+  }
+
+  return prepareSiblingBlockRange(document, requestedBlockIds, true)
+}
+
+function prepareSiblingBlockRange(
+  document: DocumentState,
+  blockIds: readonly BlockId[],
+  requireContiguous: boolean,
+): Result<PreparedSiblingBlockRange, CommandError> {
+  const firstBlockId = blockIds[0]
+  if (firstBlockId === undefined) {
+    return err({
+      code: 'invalidBlockRange',
+      message: 'Block range requires at least one block id.',
+    })
+  }
+
+  const parentId = findParentId(document, firstBlockId)
+  if (parentId === undefined) {
+    return err({
+      code: 'invalidParent',
+      message: `Block "${firstBlockId}" is not attached to the document tree.`,
+    })
+  }
+
+  const parentChildren = document.children[parentId]
+  if (parentChildren === undefined) {
+    return err({
+      code: 'invalidParent',
+      message: `Parent block "${parentId}" does not have a children entry.`,
+    })
+  }
+
+  const blockIndexById = new Map<BlockId, number>()
+  for (const blockId of blockIds) {
+    const blockParentId = findParentId(document, blockId)
+    if (blockParentId !== parentId) {
+      return err({
+        code: 'invalidParent',
+        message: 'Block range must contain sibling blocks with the same parent.',
+      })
+    }
+
+    const index = parentChildren.indexOf(blockId)
+    if (index === -1) {
+      return err({
+        code: 'invalidParent',
+        message: `Block "${blockId}" is not a child of parent "${parentId}".`,
+      })
+    }
+
+    blockIndexById.set(blockId, index)
+  }
+
+  const orderedBlockIds = [...blockIds].sort(
+    (leftBlockId, rightBlockId) =>
+      (blockIndexById.get(leftBlockId) ?? 0) - (blockIndexById.get(rightBlockId) ?? 0),
+  )
+  const firstIndex = blockIndexById.get(orderedBlockIds[0] ?? '')
+  const lastIndex = blockIndexById.get(orderedBlockIds[orderedBlockIds.length - 1] ?? '')
+  if (firstIndex === undefined || lastIndex === undefined) {
+    return err({
+      code: 'invalidIndex',
+      message: 'Block range indexes could not be resolved.',
+    })
+  }
+
+  if (requireContiguous) {
+    for (let offset = 0; offset < orderedBlockIds.length; offset += 1) {
+      if (parentChildren[firstIndex + offset] !== orderedBlockIds[offset]) {
+        return err({
+          code: 'invalidBlockRange',
+          message: 'Block range command requires a contiguous sibling range.',
+        })
+      }
+    }
+  }
+
+  return ok({
+    parentId,
+    blockIds: orderedBlockIds,
+    parentChildren,
+    firstIndex,
+    lastIndex,
+  })
+}
+
+function prepareDuplicateFragment(
+  document: DocumentState,
+  rootBlockIds: readonly BlockId[],
+  idMap: Readonly<Record<BlockId, BlockId>>,
+): Result<
+  {
+    readonly rootBlockIds: readonly BlockId[]
+    readonly blocks: Readonly<Record<BlockId, DocBlock>>
+    readonly children: Readonly<Record<BlockId, readonly BlockId[]>>
+  },
+  CommandError
+> {
+  const sourceBlockIds: BlockId[] = []
+  const sourceBlockIdSet = new Set<BlockId>()
+  for (const rootBlockId of rootBlockIds) {
+    for (const sourceBlockId of collectSubtreeIds(document, rootBlockId)) {
+      if (!sourceBlockIdSet.has(sourceBlockId)) {
+        sourceBlockIdSet.add(sourceBlockId)
+        sourceBlockIds.push(sourceBlockId)
+      }
+    }
+  }
+
+  const duplicateIds = new Set<BlockId>()
+  const duplicateBlocks: Record<BlockId, DocBlock> = {}
+  const duplicateChildren: Record<BlockId, readonly BlockId[]> = {}
+
+  for (const sourceBlockId of sourceBlockIds) {
+    const duplicateBlockId = idMap[sourceBlockId]
+    if (duplicateBlockId === undefined) {
+      return err({
+        code: 'invalidDuplicateSubtree',
+        message: `Duplicate id mapping is missing source block "${sourceBlockId}".`,
+      })
+    }
+
+    if (duplicateIds.has(duplicateBlockId)) {
+      return err({
+        code: 'invalidDuplicateSubtree',
+        message: `Duplicate id "${duplicateBlockId}" is used more than once.`,
+      })
+    }
+
+    if (document.blocks[duplicateBlockId] !== undefined) {
+      return err({
+        code: 'blockAlreadyExists',
+        message: `Block "${duplicateBlockId}" already exists.`,
+      })
+    }
+
+    const sourceBlock = document.blocks[sourceBlockId]
+    if (sourceBlock === undefined) {
+      return err({
+        code: 'blockNotFound',
+        message: `Source block "${sourceBlockId}" does not exist.`,
+      })
+    }
+
+    duplicateIds.add(duplicateBlockId)
+    duplicateBlocks[duplicateBlockId] = {
+      ...sourceBlock,
+      id: duplicateBlockId,
+    }
+  }
+
+  for (const sourceBlockId of sourceBlockIds) {
+    const duplicateBlockId = idMap[sourceBlockId]
+    if (duplicateBlockId === undefined) {
+      return err({
+        code: 'invalidDuplicateSubtree',
+        message: `Duplicate id mapping is missing source block "${sourceBlockId}".`,
+      })
+    }
+
+    const nextChildIds: BlockId[] = []
+    for (const sourceChildId of getBlockChildren(document, sourceBlockId)) {
+      const duplicateChildId = idMap[sourceChildId]
+      if (duplicateChildId === undefined || !duplicateIds.has(duplicateChildId)) {
+        return err({
+          code: 'invalidDuplicateSubtree',
+          message: `Duplicate id mapping is missing child block "${sourceChildId}".`,
+        })
+      }
+
+      nextChildIds.push(duplicateChildId)
+    }
+
+    duplicateChildren[duplicateBlockId] = nextChildIds
+  }
+
+  const duplicateRootIds: BlockId[] = []
+  for (const rootBlockId of rootBlockIds) {
+    const duplicateRootId = idMap[rootBlockId]
+    if (duplicateRootId === undefined) {
+      return err({
+        code: 'invalidDuplicateSubtree',
+        message: `Duplicate id mapping is missing root block "${rootBlockId}".`,
+      })
+    }
+
+    duplicateRootIds.push(duplicateRootId)
+  }
+
+  return ok({
+    rootBlockIds: duplicateRootIds,
+    blocks: duplicateBlocks,
+    children: duplicateChildren,
+  })
+}
+
 function insertPreparedSubtree(
   state: EditorState,
   parentId: BlockId,
@@ -725,6 +1164,30 @@ function insertPreparedSubtree(
   rootBlockId: BlockId,
   blocksToInsert: Readonly<Record<BlockId, DocBlock>>,
   childrenToInsert: Readonly<Record<BlockId, readonly BlockId[]>>,
+): Result<CommandStateChange, CommandError> {
+  return insertPreparedFragment(
+    state,
+    parentId,
+    index,
+    [rootBlockId],
+    blocksToInsert,
+    childrenToInsert,
+    'invalidDuplicateSubtree',
+    undefined,
+    undefined,
+  )
+}
+
+function insertPreparedFragment(
+  state: EditorState,
+  parentId: BlockId,
+  index: number,
+  rootBlockIds: readonly BlockId[],
+  blocksToInsert: Readonly<Record<BlockId, DocBlock>>,
+  childrenToInsert: Readonly<Record<BlockId, readonly BlockId[]>>,
+  invalidFragmentCode: CommandError['code'],
+  replaceBlockIds: readonly BlockId[] | undefined,
+  selection: DocumentSelection | undefined,
 ): Result<CommandStateChange, CommandError> {
   const document = state.document
   const parentChildren = document.children[parentId]
@@ -743,19 +1206,62 @@ function insertPreparedSubtree(
   }
 
   const insertedBlockIds = Object.keys(blocksToInsert)
-  if (blocksToInsert[rootBlockId] === undefined) {
+  const hasReplacement = replaceBlockIds !== undefined && replaceBlockIds.length > 0
+  if (rootBlockIds.length === 0) {
+    if (
+      insertedBlockIds.length === 0 &&
+      Object.keys(childrenToInsert).length === 0 &&
+      !hasReplacement
+    ) {
+      if (selection !== undefined) {
+        const invalidBlockId = findMissingSelectionBlockId(document, selection)
+        if (invalidBlockId !== undefined) {
+          return err({
+            code: 'invalidSelection',
+            message: `Selection references missing block "${invalidBlockId}".`,
+          })
+        }
+
+        return ok({
+          state: {
+            ...state,
+            selection,
+          },
+          changedBlockIds: [],
+        })
+      }
+
+      return ok({
+        state,
+        changedBlockIds: [],
+      })
+    }
+
     return err({
-      code: 'invalidDuplicateSubtree',
-      message: `Duplicate root block "${rootBlockId}" is not included in the subtree.`,
+      code: invalidFragmentCode,
+      message: 'Block fragment requires at least one root block id when blocks are provided.',
     })
   }
+
+  const replacementResult = prepareFragmentReplacement(
+    document,
+    parentId,
+    index,
+    parentChildren,
+    replaceBlockIds,
+    invalidFragmentCode,
+  )
+  if (!replacementResult.ok) {
+    return replacementResult
+  }
+  const { removedIds, removedIdSet, parentChildrenWithoutReplacement } = replacementResult.value
 
   for (const blockId of insertedBlockIds) {
     const block = blocksToInsert[blockId]
     if (block?.id !== blockId) {
       return err({
-        code: 'invalidDuplicateSubtree',
-        message: `Duplicate block "${blockId}" does not match its map key.`,
+        code: invalidFragmentCode,
+        message: `Fragment block "${blockId}" does not match its map key.`,
       })
     }
 
@@ -766,46 +1272,276 @@ function insertPreparedSubtree(
       })
     }
 
+    if (document.children[blockId] !== undefined) {
+      return err({
+        code: invalidFragmentCode,
+        message: `Fragment block "${blockId}" would overwrite an existing children entry.`,
+      })
+    }
+
     const childIds = childrenToInsert[blockId]
     if (childIds === undefined) {
       return err({
-        code: 'invalidDuplicateSubtree',
-        message: `Duplicate block "${blockId}" does not have a children entry.`,
+        code: invalidFragmentCode,
+        message: `Fragment block "${blockId}" does not have a children entry.`,
       })
     }
 
     for (const childId of childIds) {
       if (blocksToInsert[childId] === undefined) {
         return err({
-          code: 'invalidDuplicateSubtree',
-          message: `Duplicate child "${childId}" is not included in the subtree.`,
+          code: invalidFragmentCode,
+          message: `Fragment child "${childId}" is not included in the fragment blocks.`,
         })
       }
     }
   }
 
-  const nextParentChildren = [...parentChildren]
-  nextParentChildren.splice(index, 0, rootBlockId)
+  const childrenEntryIds = Object.keys(childrenToInsert)
+  for (const childrenEntryId of childrenEntryIds) {
+    if (blocksToInsert[childrenEntryId] === undefined) {
+      return err({
+        code: invalidFragmentCode,
+        message: `Fragment children entry "${childrenEntryId}" does not reference a fragment block.`,
+      })
+    }
+  }
+
+  const rootBlockIdSet = new Set<BlockId>()
+  for (const rootBlockId of rootBlockIds) {
+    if (blocksToInsert[rootBlockId] === undefined) {
+      return err({
+        code: invalidFragmentCode,
+        message: `Fragment root block "${rootBlockId}" is not included in the fragment blocks.`,
+      })
+    }
+
+    if (rootBlockIdSet.has(rootBlockId)) {
+      return err({
+        code: invalidFragmentCode,
+        message: `Fragment root block "${rootBlockId}" is used more than once.`,
+      })
+    }
+
+    rootBlockIdSet.add(rootBlockId)
+  }
+
+  const inboundParentByChildId = new Map<BlockId, BlockId>()
+  for (const blockId of insertedBlockIds) {
+    const childIds = childrenToInsert[blockId] ?? []
+    for (const childId of childIds) {
+      if (rootBlockIdSet.has(childId)) {
+        return err({
+          code: invalidFragmentCode,
+          message: `Fragment root block "${childId}" cannot also be a child block.`,
+        })
+      }
+
+      if (inboundParentByChildId.has(childId)) {
+        return err({
+          code: invalidFragmentCode,
+          message: `Fragment child block "${childId}" is referenced more than once.`,
+        })
+      }
+
+      inboundParentByChildId.set(childId, blockId)
+    }
+  }
+
+  for (const blockId of insertedBlockIds) {
+    if (!rootBlockIdSet.has(blockId) && !inboundParentByChildId.has(blockId)) {
+      return err({
+        code: invalidFragmentCode,
+        message: `Fragment block "${blockId}" is not reachable from fragment roots.`,
+      })
+    }
+  }
+
+  const reachableBlockIds = collectReachableFragmentBlockIds(rootBlockIds, childrenToInsert)
+  if (reachableBlockIds.length !== insertedBlockIds.length) {
+    return err({
+      code: invalidFragmentCode,
+      message: 'Block fragment contains orphan blocks that are not reachable from fragment roots.',
+    })
+  }
+
+  const nextParentChildren = [...parentChildrenWithoutReplacement]
+  nextParentChildren.splice(index, 0, ...rootBlockIds)
+  const documentBlocks =
+    removedIds.length === 0
+      ? document.blocks
+      : (Object.fromEntries(
+          Object.entries(document.blocks).filter(([blockId]) => !removedIdSet.has(blockId)),
+        ) as Record<BlockId, DocBlock>)
+  const documentChildren =
+    removedIds.length === 0
+      ? document.children
+      : (Object.fromEntries(
+          Object.entries(document.children)
+            .filter(([blockId]) => !removedIdSet.has(blockId))
+            .map(([blockId, childIds]) => [
+              blockId,
+              childIds.filter((childId) => !removedIdSet.has(childId)),
+            ]),
+        ) as Record<BlockId, readonly BlockId[]>)
+  const nextDocument: DocumentState = {
+    ...document,
+    blocks: {
+      ...documentBlocks,
+      ...blocksToInsert,
+    },
+    children: {
+      ...documentChildren,
+      ...childrenToInsert,
+      [parentId]: nextParentChildren,
+    },
+    version: document.version + 1,
+  }
+
+  if (selection !== undefined) {
+    const invalidBlockId = findMissingSelectionBlockId(nextDocument, selection)
+    if (invalidBlockId !== undefined) {
+      return err({
+        code: 'invalidSelection',
+        message: `Selection references missing block "${invalidBlockId}".`,
+      })
+    }
+  }
 
   return ok({
     state: {
       ...state,
-      document: {
-        ...document,
-        blocks: {
-          ...document.blocks,
-          ...blocksToInsert,
-        },
-        children: {
-          ...document.children,
-          ...childrenToInsert,
-          [parentId]: nextParentChildren,
-        },
-        version: document.version + 1,
-      },
+      document: nextDocument,
+      selection:
+        selection ??
+        (selectionTouchesAny(document, state.selection, removedIdSet)
+          ? noneSelection
+          : state.selection),
     },
-    changedBlockIds: [parentId, ...insertedBlockIds],
+    changedBlockIds: [parentId, ...removedIds, ...reachableBlockIds],
   })
+}
+
+function prepareFragmentReplacement(
+  document: DocumentState,
+  parentId: BlockId,
+  index: number,
+  parentChildren: readonly BlockId[],
+  replaceBlockIds: readonly BlockId[] | undefined,
+  invalidFragmentCode: CommandError['code'],
+): Result<PreparedFragmentReplacement, CommandError> {
+  if (replaceBlockIds === undefined || replaceBlockIds.length === 0) {
+    return ok({
+      removedIds: [],
+      removedIdSet: new Set<BlockId>(),
+      parentChildrenWithoutReplacement: parentChildren,
+    })
+  }
+
+  const seenReplaceIds = new Set<BlockId>()
+  const replaceIndices: number[] = []
+
+  for (const blockId of replaceBlockIds) {
+    if (seenReplaceIds.has(blockId)) {
+      return err({
+        code: invalidFragmentCode,
+        message: `Replacement block "${blockId}" is listed more than once.`,
+      })
+    }
+
+    seenReplaceIds.add(blockId)
+
+    if (blockId === document.rootId) {
+      return err({
+        code: 'cannotDeleteRoot',
+        message: 'The root block cannot be replaced.',
+      })
+    }
+
+    if (document.blocks[blockId] === undefined) {
+      return err({
+        code: 'blockNotFound',
+        message: `Replacement block "${blockId}" does not exist.`,
+      })
+    }
+
+    const currentParentId = findParentId(document, blockId)
+    if (currentParentId !== parentId) {
+      return err({
+        code: 'invalidParent',
+        message: `Replacement block "${blockId}" is not a child of "${parentId}".`,
+      })
+    }
+
+    const replaceIndex = parentChildren.indexOf(blockId)
+    if (replaceIndex === -1) {
+      return err({
+        code: 'invalidParent',
+        message: `Replacement block "${blockId}" is not attached to "${parentId}".`,
+      })
+    }
+
+    replaceIndices.push(replaceIndex)
+  }
+
+  for (const [offset, replaceIndex] of replaceIndices.entries()) {
+    if (replaceIndex !== index + offset) {
+      return err({
+        code: invalidFragmentCode,
+        message: 'Replacement blocks must be contiguous and start at the insertion index.',
+      })
+    }
+  }
+
+  const removedIds: BlockId[] = []
+  const removedIdSet = new Set<BlockId>()
+
+  for (const replaceBlockId of replaceBlockIds) {
+    for (const removedId of collectSubtreeIds(document, replaceBlockId)) {
+      if (!removedIdSet.has(removedId)) {
+        removedIdSet.add(removedId)
+        removedIds.push(removedId)
+      }
+    }
+  }
+
+  const parentChildrenWithoutReplacement = [...parentChildren]
+  parentChildrenWithoutReplacement.splice(index, replaceBlockIds.length)
+
+  return ok({
+    removedIds,
+    removedIdSet,
+    parentChildrenWithoutReplacement,
+  })
+}
+
+function collectReachableFragmentBlockIds(
+  rootBlockIds: readonly BlockId[],
+  childrenToInsert: Readonly<Record<BlockId, readonly BlockId[]>>,
+): readonly BlockId[] {
+  const reachableBlockIds: BlockId[] = []
+  const visitedBlockIds = new Set<BlockId>()
+  const pendingBlockIds = [...rootBlockIds].reverse()
+
+  while (pendingBlockIds.length > 0) {
+    const blockId = pendingBlockIds.pop()
+    if (blockId === undefined || visitedBlockIds.has(blockId)) {
+      continue
+    }
+
+    visitedBlockIds.add(blockId)
+    reachableBlockIds.push(blockId)
+
+    const childIds = childrenToInsert[blockId] ?? []
+    for (let index = childIds.length - 1; index >= 0; index -= 1) {
+      const childId = childIds[index]
+      if (childId !== undefined) {
+        pendingBlockIds.push(childId)
+      }
+    }
+  }
+
+  return reachableBlockIds
 }
 
 function convertBlockType(

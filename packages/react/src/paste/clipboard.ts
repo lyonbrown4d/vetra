@@ -1,7 +1,6 @@
 import { parseDocument, stringifyDocument, type MigrationError } from '@vetra/persistence-json'
 import {
   collectSubtreeIds,
-  findParentId,
   getBlockChildren,
   getSelectedBlockIds,
   type BlockId,
@@ -12,9 +11,10 @@ import {
   type EditorRuntime,
   ok,
   type Result,
-  type Transaction,
 } from '@vetra/core'
 import {
+  pasteFragmentIntoEditor,
+  type PasteBlockFragment,
   type PasteBlockIdFactory,
   type PasteError,
   type PasteReferenceTarget,
@@ -90,7 +90,7 @@ export function createClipboardPayloadFromSelection(
     plainText: selectedBlockIds
       .map((blockId) => blockTreeToText(document, blockId))
       .filter((text) => text.length > 0)
-      .join('\\n\\n'),
+      .join('\n\n'),
   }
 }
 
@@ -131,30 +131,6 @@ function pasteSourceDocumentIntoEditor({
   readonly sourceDocument: DocumentState
   readonly idFactory: PasteBlockIdFactory
 }): Result<PasteResult, PasteError> {
-  const state = editor.getState()
-  const referenceParentId = findParentId(state.document, target.referenceBlockId)
-  if (referenceParentId === undefined) {
-    return {
-      ok: false,
-      error: {
-        code: 'pasteStrategyFailed',
-        message: `Reference block "${target.referenceBlockId}" does not exist or has no parent.`,
-      },
-    }
-  }
-
-  const siblings = getBlockChildren(state.document, referenceParentId)
-  const referenceIndex = siblings.indexOf(target.referenceBlockId)
-  if (referenceIndex === -1) {
-    return {
-      ok: false,
-      error: {
-        code: 'pasteStrategyFailed',
-        message: `Reference block "${target.referenceBlockId}" is not attached to its parent.`,
-      },
-    }
-  }
-
   const sourceChildren = getBlockChildren(sourceDocument, sourceDocument.rootId)
   if (sourceChildren.length === 0) {
     return ok({ handled: false, insertedBlockIds: [], transactions: [] })
@@ -163,42 +139,18 @@ function pasteSourceDocumentIntoEditor({
   const plannedPaste = planClipboardPaste({
     sourceDocument,
     sourceChildren,
-    targetDocument: state.document,
+    targetDocument: editor.getState().document,
     idFactory,
   })
   if (!plannedPaste.ok) {
     return plannedPaste
   }
 
-  let insertionIndex = target.placement === 'before' ? referenceIndex : referenceIndex + 1
-  const insertedBlockIds: BlockId[] = []
-  const transactions: Transaction[] = []
-
-  for (const subtree of plannedPaste.value) {
-    const subtreeResult = pastePlannedSubtree({
-      editor,
-      subtree,
-      targetParentId: referenceParentId,
-      insertIndex: insertionIndex,
-    })
-
-    if (!subtreeResult.ok) {
-      return subtreeResult
-    }
-
-    insertedBlockIds.push(subtreeResult.value.rootInsertedId)
-    transactions.push(...subtreeResult.value.transactions)
-    insertionIndex += 1
-  }
-
-  return {
-    ok: true,
-    value: {
-      handled: true,
-      insertedBlockIds,
-      transactions,
-    },
-  }
+  return pasteFragmentIntoEditor({
+    editor,
+    target,
+    fragment: createPasteFragmentFromPlannedSubtrees(plannedPaste.value),
+  })
 }
 
 interface PlannedPasteSubtree {
@@ -367,58 +319,34 @@ function createClipboardPasteBlockId({
   }
 }
 
-interface PastePlannedSubtreeState {
-  readonly editor: EditorRuntime
-  readonly subtree: PlannedPasteSubtree
-  readonly targetParentId: BlockId
-  readonly insertIndex: number
-}
+function createPasteFragmentFromPlannedSubtrees(
+  subtrees: readonly PlannedPasteSubtree[],
+): PasteBlockFragment {
+  const blocks: Record<BlockId, DocBlock> = {}
+  const children: Record<BlockId, readonly BlockId[]> = {}
 
-interface PasteSubtreeResult {
-  readonly rootInsertedId: BlockId
-  readonly transactions: readonly Transaction[]
-}
-
-function pastePlannedSubtree({
-  editor,
-  subtree,
-  targetParentId,
-  insertIndex,
-}: PastePlannedSubtreeState): Result<PasteSubtreeResult, PasteError> {
-  const insertResult = editor.dispatch({
-    type: 'insertBlock',
-    parentId: targetParentId,
-    index: insertIndex,
-    block: subtree.block,
-  })
-  if (!insertResult.ok) {
-    return {
-      ok: false,
-      error: insertResult.error,
-    }
+  for (const subtree of subtrees) {
+    appendPlannedSubtreeToFragment(subtree, blocks, children)
   }
 
-  const childTransactions: Transaction[] = [insertResult.value]
-  let childInsertionIndex = 0
-  for (const childSubtree of subtree.children) {
-    const childResult = pastePlannedSubtree({
-      editor,
-      subtree: childSubtree,
-      targetParentId: subtree.insertedId,
-      insertIndex: childInsertionIndex,
-    })
-    if (!childResult.ok) {
-      return childResult
-    }
-
-    childTransactions.push(...childResult.value.transactions)
-    childInsertionIndex += 1
+  return {
+    rootBlockIds: subtrees.map((subtree) => subtree.insertedId),
+    blocks,
+    children,
   }
+}
 
-  return ok({
-    rootInsertedId: subtree.insertedId,
-    transactions: childTransactions,
-  })
+function appendPlannedSubtreeToFragment(
+  subtree: PlannedPasteSubtree,
+  blocks: Record<BlockId, DocBlock>,
+  children: Record<BlockId, readonly BlockId[]>,
+): void {
+  blocks[subtree.insertedId] = subtree.block
+  children[subtree.insertedId] = subtree.children.map((child) => child.insertedId)
+
+  for (const child of subtree.children) {
+    appendPlannedSubtreeToFragment(child, blocks, children)
+  }
 }
 
 function blockTreeToText(document: DocumentState, rootId: BlockId): string {
@@ -430,11 +358,11 @@ function blockTreeToText(document: DocumentState, rootId: BlockId): string {
   const childrenText = getBlockChildren(document, rootId)
     .map((childId) => blockTreeToText(document, childId))
     .filter((childText) => childText.length > 0)
-    .join('\\n')
+    .join('\n')
   const blockText = getBlockText(block)
 
   return childrenText.length > 0 && blockText.length > 0
-    ? `${blockText}\\n${childrenText}`
+    ? `${blockText}\n${childrenText}`
     : `${blockText}${childrenText}`
 }
 

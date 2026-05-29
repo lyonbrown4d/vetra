@@ -6,6 +6,8 @@ export type CommandErrorCode =
   | 'cannotDuplicateRoot'
   | 'cannotMoveRoot'
   | 'invalidBlockType'
+  | 'invalidBlockFragment'
+  | 'invalidBlockRange'
   | 'invalidDuplicateSubtree'
   | 'invalidIndex'
   | 'invalidMergeTarget'

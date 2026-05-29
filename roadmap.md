@@ -22,11 +22,17 @@ Vetra 的核心路线是把大文档编辑拆成三层稳定职责：
 
 ### Phase 2: Clipboard And Multi-Block Editing
 
-- Add internal selected-block serialization for copy/cut/paste.
-- Write clipboard payloads as internal JSON plus plain text and optional Markdown.
-- Prefer internal JSON on paste, then fall back to plain text/import adapters.
-- Add multi-block duplicate and move commands.
-- Add range toolbar actions for delete, copy, duplicate, convert, and move.
+- Selected-block clipboard V1 is in place: React serializes block/range selection as internal
+  JSON plus `text/plain`, and paste prefers the internal Vetra payload before plain text.
+- Atomic block fragment paste is in place: recursive per-block paste insertion has been replaced
+  with a core command so multi-block/subtree paste is one transaction and one history step.
+- Range paste replacement is in place for block ranges: paste can replace selected sibling blocks
+  before focusing the inserted fragment.
+- Browser `text/html` paste is routed through `@vetra/import-html` from `@vetra/react`.
+  Core must remain framework-agnostic and must not parse HTML or read browser clipboard events.
+- Multi-block duplicate and move commands are in place as atomic core commands.
+- Range toolbar actions are in place for delete, duplicate, move up, and move down.
+- Add toolbar actions for copy, cut, and multi-block convert.
 
 ### Phase 3: Inline Selection Bridge
 
@@ -54,14 +60,34 @@ Vetra 的核心路线是把大文档编辑拆成三层稳定职责：
 
 ## Current Iteration
 
-This iteration focuses on the Notion-like playground layer and basic block coverage:
+The playground, basic block coverage, inspector, structured clipboard V1, atomic fragment paste,
+range paste replacement, browser HTML paste, atomic multi-block duplicate/move commands, and the
+first range toolbar actions have landed. The next iteration should fill the remaining range action
+UI and continue hardening external-format fidelity.
 
-1. Upgrade the default slash menu with alias/token matching, Lucide-backed item icons, and
-   block actions for `/h1`, `/h2`, `/todo`, `/note`, and `/code js`.
-2. Add basic todo and callout block definitions plus React readonly/active renderer coverage.
-3. Expose a playground runtime inspector for document version, active block, selected block count,
-   focused block, mounted block count, active editor count, and recent document activity.
-4. Keep the playground acceptance story close to the downstream caller experience instead of a
-   static demo-only view.
-5. Gate the work with strict TypeScript, focused unit tests, E2E inspector coverage, and Storybook
-   smoke/build checks.
+1. Complete range action UI and commands for multi-block editing.
+   - Done: toolbar actions for delete, duplicate, move up, and move down.
+   - Done: multi-block duplicate and move are atomic core commands, not repeated UI dispatch loops.
+   - Remaining: toolbar actions for copy, cut, and multi-block convert.
+   - Remaining: make range delete selection update atomic with the delete command.
+   - Every document mutation still goes through core commands.
+2. Improve HTML and inline content fidelity.
+   - Preserve marks, links, and inline code where the adapter model supports it.
+   - Keep sanitization and external format parsing out of `@vetra/core`.
+3. Harden block fragment editing semantics.
+   - Input should describe root block ids, blocks, and children without DOM, React, Lexical, or
+     browser clipboard types.
+   - Fragment insertion/replacement must remain one transaction and one history step.
+   - Invalid fragments must fail before mutating document state.
+4. Keep `@vetra/react` paste orchestration focused on browser clipboard concerns.
+   - React owns `copy` / `cut` / `paste` event handling and MIME priority.
+   - Paste priority is Vetra internal block MIME, then `text/html` via an adapter, then
+     `text/plain`.
+   - Range paste replacement should stay derived from `DocumentSelection`, not DOM selection.
+5. Gate this round with focused coverage.
+   - Multi-block duplicate/move unit tests are in place.
+   - Keep React tests covering selection replacement, clipboard MIME priority, and focus after
+     paste.
+   - Keep E2E coverage for structured multi-block copy/cut/paste, range paste replacement, and
+     browser HTML paste.
+   - Storybook acceptance coverage exists for the first range toolbar actions.

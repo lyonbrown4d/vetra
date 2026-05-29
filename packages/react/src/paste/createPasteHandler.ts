@@ -4,15 +4,19 @@ import {
   ok,
   type BlockId,
   type CommandError,
+  collectSubtreeIds,
   type DocBlock,
   type DocumentState,
   type EditorRuntime,
+  findParentId,
+  getBlockChildren,
   type Result,
   type Transaction,
 } from '@vetra/core'
 
 export const plainTextPasteKind = 'plain-text'
 export const markdownPasteKind = 'markdown'
+export const htmlPasteKind = 'html'
 
 export type PasteDataKind = string
 export type PastePlacement = 'before' | 'after'
@@ -20,6 +24,7 @@ export type PastePlacement = 'before' | 'after'
 export interface PasteReferenceTarget {
   readonly referenceBlockId: BlockId
   readonly placement?: PastePlacement
+  readonly replaceBlockIds?: readonly BlockId[]
 }
 
 export interface PasteInput {
@@ -45,10 +50,18 @@ export interface PasteStrategyContext {
   readonly idFactory: PasteBlockIdFactory
 }
 
+export interface PasteBlockFragment {
+  readonly rootBlockIds: readonly BlockId[]
+  readonly blocks: Readonly<Record<BlockId, DocBlock>>
+  readonly children: Readonly<Record<BlockId, readonly BlockId[]>>
+}
+
 export type PasteBlockStrategy = (
   input: PasteStrategyInput,
   context: PasteStrategyContext,
-) => readonly DocBlock[]
+) => PasteStrategyResult
+
+export type PasteStrategyResult = PasteBlockFragment | readonly DocBlock[]
 
 export type PasteDocumentImporter = (
   input: PasteStrategyInput,
@@ -71,7 +84,13 @@ export interface PasteIntoEditorOptions extends CreatePasteHandlerOptions {
   readonly input: PasteInput
 }
 
-interface ImportPasteBlocksOptions {
+export interface PasteFragmentIntoEditorOptions {
+  readonly editor: EditorRuntime
+  readonly target: PasteReferenceTarget
+  readonly fragment: PasteBlockFragment
+}
+
+interface ImportPasteFragmentOptions {
   readonly input: PasteInput
   readonly idFactory: PasteBlockIdFactory
   readonly strategy: PasteBlockStrategy
@@ -126,14 +145,14 @@ export function createPlainTextPasteStrategy(
         }),
     })
 
-    return getRootBlocks(document)
+    return createPasteFragmentFromDocument(document)
   }
 }
 
 export function createDocumentPasteStrategy(
   importDocument: PasteDocumentImporter,
 ): PasteBlockStrategy {
-  return (input, context) => getRootBlocks(importDocument(input, context))
+  return (input, context) => createPasteFragmentFromDocument(importDocument(input, context))
 }
 
 export function createPasteHandler(options: CreatePasteHandlerOptions): PasteHandler {
@@ -156,7 +175,7 @@ export function pasteIntoEditor(options: PasteIntoEditorOptions): Result<PasteRe
 
   const strategy = options.strategy ?? createPlainTextPasteStrategy(options.plainText)
   const idFactory = options.idFactory ?? defaultPasteBlockIdFactory
-  const importResult = importPasteBlocks({
+  const importResult = importPasteFragment({
     input: options.input,
     idFactory,
     strategy,
@@ -165,36 +184,30 @@ export function pasteIntoEditor(options: PasteIntoEditorOptions): Result<PasteRe
     return importResult
   }
 
-  const blocks = importResult.value
-  if (blocks.length === 0) {
-    return ok(createNoopPasteResult())
-  }
-
-  const validationResult = validatePasteBlocks(options.editor, options.target, blocks)
-  if (!validationResult.ok) {
-    return validationResult
-  }
-
-  return dispatchPasteBlocks(options.editor, options.target, blocks)
+  return pasteFragmentIntoEditor({
+    editor: options.editor,
+    target: options.target,
+    fragment: importResult.value,
+  })
 }
 
-function importPasteBlocks(
-  options: ImportPasteBlocksOptions,
-): Result<readonly DocBlock[], PasteError> {
+function importPasteFragment(
+  options: ImportPasteFragmentOptions,
+): Result<PasteBlockFragment, PasteError> {
   const kind = options.input.kind ?? plainTextPasteKind
 
   try {
-    return ok(
-      options.strategy(
-        {
-          text: options.input.text,
-          kind,
-        },
-        {
-          idFactory: options.idFactory,
-        },
-      ),
+    const strategyOutput = options.strategy(
+      {
+        text: options.input.text,
+        kind,
+      },
+      {
+        idFactory: options.idFactory,
+      },
     )
+
+    return normalizePasteStrategyOutput(strategyOutput)
   } catch (cause) {
     const message =
       cause instanceof Error && cause.message.length > 0 ? cause.message : 'Paste strategy failed.'
@@ -207,12 +220,209 @@ function importPasteBlocks(
   }
 }
 
-function validatePasteBlocks(
-  editor: EditorRuntime,
-  target: PasteReferenceTarget,
+function normalizePasteStrategyOutput(
+  output: PasteStrategyResult,
+): Result<PasteBlockFragment, PasteError> {
+  if (isPasteBlockFragment(output)) {
+    const children: Record<BlockId, readonly BlockId[]> = { ...output.children }
+    for (const blockId of Object.keys(output.blocks)) {
+      children[blockId] = children[blockId] ?? []
+    }
+
+    return ok({
+      rootBlockIds: [...output.rootBlockIds],
+      blocks: { ...output.blocks },
+      children,
+    })
+  }
+
+  return createPasteFragmentFromBlocks(output)
+}
+
+function isPasteBlockFragment(output: PasteStrategyResult): output is PasteBlockFragment {
+  return !Array.isArray(output)
+}
+
+export function createPasteFragmentFromBlocks(
   blocks: readonly DocBlock[],
+): Result<PasteBlockFragment, PasteError> {
+  const fragmentBlocks: Record<BlockId, DocBlock> = {}
+  const children: Record<BlockId, readonly BlockId[]> = {}
+  const rootBlockIds: BlockId[] = []
+
+  for (const block of blocks) {
+    if (fragmentBlocks[block.id] !== undefined) {
+      return err({
+        code: 'pasteDuplicateBlockId',
+        message: `Paste strategy produced duplicate block id "${block.id}".`,
+      })
+    }
+
+    rootBlockIds.push(block.id)
+    fragmentBlocks[block.id] = block
+    children[block.id] = []
+  }
+
+  return ok({
+    rootBlockIds,
+    blocks: fragmentBlocks,
+    children,
+  })
+}
+
+export function createPasteFragmentFromDocument(document: DocumentState): PasteBlockFragment {
+  const rootBlockIds = getBlockChildren(document, document.rootId)
+  const copiedIds: BlockId[] = []
+  const copiedIdSet = new Set<BlockId>()
+
+  for (const rootBlockId of rootBlockIds) {
+    for (const blockId of collectSubtreeIds(document, rootBlockId)) {
+      if (!copiedIdSet.has(blockId)) {
+        copiedIdSet.add(blockId)
+        copiedIds.push(blockId)
+      }
+    }
+  }
+
+  const blocks: Record<BlockId, DocBlock> = {}
+  const children: Record<BlockId, readonly BlockId[]> = {}
+
+  for (const blockId of copiedIds) {
+    const block = document.blocks[blockId]
+    if (block === undefined) {
+      throw new Error(`Paste document references missing block "${blockId}".`)
+    }
+
+    blocks[blockId] = block
+    children[blockId] = getBlockChildren(document, blockId).filter((childId) =>
+      copiedIdSet.has(childId),
+    )
+  }
+
+  return {
+    rootBlockIds,
+    blocks,
+    children,
+  }
+}
+
+function validatePasteFragment(
+  document: DocumentState,
+  fragment: PasteBlockFragment,
 ): Result<void, PasteError> {
+  const seenBlockIds = new Set<BlockId>()
+
+  for (const rootBlockId of fragment.rootBlockIds) {
+    const result = validatePasteFragmentSubtree(document, fragment, rootBlockId, seenBlockIds)
+    if (!result.ok) {
+      return result
+    }
+  }
+
+  for (const blockId of Object.keys(fragment.blocks)) {
+    if (!seenBlockIds.has(blockId)) {
+      return err({
+        code: 'pasteStrategyFailed',
+        message: `Paste strategy produced unreachable block "${blockId}".`,
+      })
+    }
+  }
+
+  return ok(undefined)
+}
+
+function validatePasteFragmentSubtree(
+  document: DocumentState,
+  fragment: PasteBlockFragment,
+  blockId: BlockId,
+  seenBlockIds: Set<BlockId>,
+): Result<void, PasteError> {
+  if (seenBlockIds.has(blockId)) {
+    return err({
+      code: 'pasteDuplicateBlockId',
+      message: `Paste strategy produced duplicate block id "${blockId}".`,
+    })
+  }
+
+  const block = fragment.blocks[blockId]
+  if (block === undefined) {
+    return err({
+      code: 'pasteStrategyFailed',
+      message: `Paste strategy referenced missing block "${blockId}".`,
+    })
+  }
+
+  if (block.id !== blockId) {
+    return err({
+      code: 'pasteStrategyFailed',
+      message: `Paste strategy produced block "${block.id}" under map key "${blockId}".`,
+    })
+  }
+
+  if (document.blocks[block.id] !== undefined) {
+    return err({
+      code: 'pasteBlockAlreadyExists',
+      message: `Paste strategy produced existing block id "${block.id}".`,
+    })
+  }
+
+  seenBlockIds.add(blockId)
+
+  for (const childId of fragment.children[blockId] ?? []) {
+    const result = validatePasteFragmentSubtree(document, fragment, childId, seenBlockIds)
+    if (!result.ok) {
+      return result
+    }
+  }
+
+  return ok(undefined)
+}
+
+export function pasteFragmentIntoEditor({
+  editor,
+  target,
+  fragment,
+}: PasteFragmentIntoEditorOptions): Result<PasteResult, PasteError> {
+  if (fragment.rootBlockIds.length === 0) {
+    return ok(createNoopPasteResult())
+  }
+
   const document = editor.getState().document
+  const insertion = resolvePasteInsertion(document, target)
+  if (!insertion.ok) {
+    return insertion
+  }
+
+  const validationResult = validatePasteFragment(document, fragment)
+  if (!validationResult.ok) {
+    return validationResult
+  }
+
+  const result = editor.dispatch({
+    type: 'insertBlockFragment',
+    parentId: insertion.value.parentId,
+    index: insertion.value.index,
+    rootBlockIds: fragment.rootBlockIds,
+    blocks: fragment.blocks,
+    children: fragment.children,
+    ...(target.replaceBlockIds === undefined ? {} : { replaceBlockIds: target.replaceBlockIds }),
+  })
+
+  if (!result.ok) {
+    return result
+  }
+
+  return ok({
+    handled: true,
+    insertedBlockIds: fragment.rootBlockIds,
+    transactions: [result.value],
+  })
+}
+
+function resolvePasteInsertion(
+  document: DocumentState,
+  target: PasteReferenceTarget,
+): Result<{ readonly parentId: BlockId; readonly index: number }, PasteError> {
   if (document.blocks[target.referenceBlockId] === undefined) {
     return err({
       code: 'blockNotFound',
@@ -220,80 +430,27 @@ function validatePasteBlocks(
     })
   }
 
-  const seenBlockIds = new Set<BlockId>()
-  for (const block of blocks) {
-    if (seenBlockIds.has(block.id)) {
-      return err({
-        code: 'pasteDuplicateBlockId',
-        message: `Paste strategy produced duplicate block id "${block.id}".`,
-      })
-    }
-
-    if (document.blocks[block.id] !== undefined) {
-      return err({
-        code: 'pasteBlockAlreadyExists',
-        message: `Paste strategy produced existing block id "${block.id}".`,
-      })
-    }
-
-    seenBlockIds.add(block.id)
+  const parentId = findParentId(document, target.referenceBlockId)
+  if (parentId === undefined) {
+    return err({
+      code: 'invalidParent',
+      message: `Reference block "${target.referenceBlockId}" is not attached to a parent.`,
+    })
   }
 
-  return ok(undefined)
-}
-
-function dispatchPasteBlocks(
-  editor: EditorRuntime,
-  target: PasteReferenceTarget,
-  blocks: readonly DocBlock[],
-): Result<PasteResult, PasteError> {
-  const insertedBlockIds: BlockId[] = []
-  const transactions: Transaction[] = []
-  const initialPlacement = target.placement ?? 'after'
-  let referenceBlockId = target.referenceBlockId
-
-  for (const [index, block] of blocks.entries()) {
-    const result =
-      index === 0 && initialPlacement === 'before'
-        ? editor.dispatch({
-            type: 'insertBlockBefore',
-            referenceBlockId,
-            block,
-          })
-        : editor.dispatch({
-            type: 'insertBlockAfter',
-            referenceBlockId,
-            block,
-          })
-
-    if (!result.ok) {
-      return result
-    }
-
-    insertedBlockIds.push(block.id)
-    transactions.push(result.value)
-    referenceBlockId = block.id
+  const siblings = getBlockChildren(document, parentId)
+  const referenceIndex = siblings.indexOf(target.referenceBlockId)
+  if (referenceIndex === -1) {
+    return err({
+      code: 'invalidParent',
+      message: `Reference block "${target.referenceBlockId}" is not a child of "${parentId}".`,
+    })
   }
 
   return ok({
-    handled: true,
-    insertedBlockIds,
-    transactions,
+    parentId,
+    index: target.placement === 'before' ? referenceIndex : referenceIndex + 1,
   })
-}
-
-function getRootBlocks(document: DocumentState): readonly DocBlock[] {
-  const rootChildIds = document.children[document.rootId] ?? []
-  const blocks: DocBlock[] = []
-
-  for (const blockId of rootChildIds) {
-    const block = document.blocks[blockId]
-    if (block !== undefined) {
-      blocks.push(block)
-    }
-  }
-
-  return blocks
 }
 
 function createNoopPasteResult(): PasteResult {

@@ -755,6 +755,94 @@ describe('EditorRoot integrated interactions', () => {
     }
   })
 
+  it('replaces a range block selection when pasting plain text', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [
+          paragraph('block-a', 'Before'),
+          paragraph('block-b', 'Replace B'),
+          paragraph('block-c', 'Replace C'),
+          paragraph('block-d', 'After'),
+        ],
+      }),
+    )
+
+    try {
+      act(() => {
+        getBlockShell(rendered.container, 'block-b').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+      act(() => {
+        getBlockShell(rendered.container, 'block-c').dispatchEvent(
+          new MouseEvent('click', { bubbles: true, shiftKey: true }),
+        )
+      })
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(createPasteEvent('Inserted'))
+      })
+
+      const rootChildren = rendered.latestDocument.children.root ?? []
+      const insertedBlockId = expectDefined(rootChildren[1])
+
+      expect(rootChildren).toHaveLength(3)
+      expect(rootChildren[0]).toBe('block-a')
+      expect(rootChildren[2]).toBe('block-d')
+      expect(rendered.latestDocument.blocks['block-b']).toBeUndefined()
+      expect(rendered.latestDocument.blocks['block-c']).toBeUndefined()
+      expect(readInlineText(rendered.latestDocument.blocks[insertedBlockId]?.content)).toBe(
+        'Inserted',
+      )
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('pastes HTML clipboard data as imported heading and paragraph blocks', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor')],
+      }),
+    )
+
+    try {
+      act(() => {
+        getBlockShell(rendered.container, 'block-a').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(
+          createClipboardEvent('paste', {
+            'text/html': '<h2>Imported title</h2><p>Imported body</p>',
+            'text/plain': 'Plain fallback',
+          }),
+        )
+      })
+
+      const rootChildren = rendered.latestDocument.children.root ?? []
+      const headingBlockId = expectDefined(rootChildren[1])
+      const paragraphBlockId = expectDefined(rootChildren[2])
+
+      expect(rootChildren).toHaveLength(3)
+      expect(rendered.latestDocument.blocks[headingBlockId]).toMatchObject({
+        type: 'heading',
+        props: { level: 2 },
+      })
+      expect(readInlineText(rendered.latestDocument.blocks[headingBlockId]?.content)).toBe(
+        'Imported title',
+      )
+      expect(rendered.latestDocument.blocks[paragraphBlockId]?.type).toBe('paragraph')
+      expect(readInlineText(rendered.latestDocument.blocks[paragraphBlockId]?.content)).toBe(
+        'Imported body',
+      )
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
   it('closes the slash menu when clicking another block', () => {
     const rendered = renderEditor(
       createDocument({
@@ -784,6 +872,60 @@ describe('EditorRoot integrated interactions', () => {
       })
 
       expect(querySlashMenu(rendered.container)).toBeNull()
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('prefers Vetra block clipboard payload over HTML clipboard data', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Copied'), paragraph('block-b', 'Anchor')],
+      }),
+    )
+
+    try {
+      act(() => {
+        getBlockShell(rendered.container, 'block-a').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+
+      const copyEvent = createClipboardEvent('copy')
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(copyEvent)
+      })
+
+      const copiedPayload = copyEvent.clipboardData?.getData(VETRA_BLOCK_CLIPBOARD_MIME_TYPE) ?? ''
+      expect(copiedPayload.length).toBeGreaterThan(0)
+
+      act(() => {
+        getBlockShell(rendered.container, 'block-b').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(
+          createClipboardEvent('paste', {
+            [VETRA_BLOCK_CLIPBOARD_MIME_TYPE]: copiedPayload,
+            'text/html': '<h1>HTML should not win</h1>',
+            'text/plain': 'Plain fallback',
+          }),
+        )
+      })
+
+      const rootChildren = rendered.latestDocument.children.root ?? []
+      const pastedBlockId = expectDefined(rootChildren[2])
+
+      expect(rootChildren).toHaveLength(3)
+      expect(rendered.latestDocument.blocks[pastedBlockId]?.type).toBe('paragraph')
+      expect(readInlineText(rendered.latestDocument.blocks[pastedBlockId]?.content)).toBe('Copied')
+      expect(
+        Object.values(rendered.latestDocument.blocks).some(
+          (block) => readInlineText(block.content) === 'HTML should not win',
+        ),
+      ).toBe(false)
     } finally {
       rendered.cleanup()
     }

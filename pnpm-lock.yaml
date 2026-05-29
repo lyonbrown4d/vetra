@@ -245,6 +245,9 @@ importers:
       '@vetra/core':
         specifier: workspace:*
         version: link:../core
+      '@vetra/import-html':
+        specifier: workspace:*
+        version: link:../import-html
       '@vetra/import-plain-text':
         specifier: workspace:*
         version: link:../import-plain-text

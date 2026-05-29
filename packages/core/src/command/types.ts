@@ -5,11 +5,14 @@ export type EditorCommand =
   | InsertBlockCommand
   | InsertBlockBeforeCommand
   | InsertBlockAfterCommand
+  | InsertBlockFragmentCommand
   | DeleteBlockCommand
   | DeleteBlocksCommand
   | UpdateBlockCommand
   | MoveBlockCommand
+  | MoveBlocksCommand
   | DuplicateBlockCommand
+  | DuplicateBlocksCommand
   | ConvertBlockTypeCommand
   | SplitBlockCommand
   | MergeBlockCommand
@@ -34,6 +37,17 @@ export interface InsertBlockAfterCommand {
   readonly type: 'insertBlockAfter'
   readonly referenceBlockId: BlockId
   readonly block: DocBlock
+}
+
+export interface InsertBlockFragmentCommand {
+  readonly type: 'insertBlockFragment'
+  readonly parentId: BlockId
+  readonly index: number
+  readonly rootBlockIds: readonly BlockId[]
+  readonly blocks: Readonly<Record<BlockId, DocBlock>>
+  readonly children: Readonly<Record<BlockId, readonly BlockId[]>>
+  readonly replaceBlockIds?: readonly BlockId[]
+  readonly selection?: DocumentSelection
 }
 
 export interface DeleteBlockCommand {
@@ -66,6 +80,14 @@ export interface MoveBlockCommand {
   readonly toIndex: number
 }
 
+export interface MoveBlocksCommand {
+  readonly type: 'moveBlocks'
+  readonly blockIds: readonly BlockId[]
+  readonly toParentId: BlockId
+  readonly toIndex: number
+  readonly selection?: DocumentSelection
+}
+
 export type DuplicateBlockPlacement = 'before' | 'after'
 
 export interface DuplicateBlockCommand {
@@ -74,6 +96,14 @@ export interface DuplicateBlockCommand {
   readonly placement?: DuplicateBlockPlacement
   readonly idMap?: Readonly<Record<BlockId, BlockId>>
   readonly block?: DocBlock
+}
+
+export interface DuplicateBlocksCommand {
+  readonly type: 'duplicateBlocks'
+  readonly blockIds: readonly BlockId[]
+  readonly placement?: DuplicateBlockPlacement
+  readonly idMap: Readonly<Record<BlockId, BlockId>>
+  readonly selection?: DocumentSelection
 }
 
 export interface ConvertBlockTypeCommand {

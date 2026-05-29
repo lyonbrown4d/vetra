@@ -21,6 +21,14 @@ interface VetraBlock {
   readonly content?: unknown
 }
 
+const VETRA_BLOCK_CLIPBOARD_MIME_TYPE = 'application/x.vetra.blocks+json'
+
+interface ClipboardEventSnapshot {
+  readonly defaultPrevented: boolean
+  readonly plainText: string
+  readonly vetraBlocksJson: string
+}
+
 test.describe('Vetra demo editor main editing path', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
@@ -286,6 +294,160 @@ test.describe('Vetra demo editor main editing path', () => {
     expect(readBlockPlainText(expectDefined(insertedBlocks[1]))).toBe('Second pasted paragraph')
   })
 
+  test('replaces a selected block range when pasting plain text', async ({ page }) => {
+    const before = await readSerializedDocument(page)
+    const beforeChildren = getRootChildren(before)
+
+    await activateBlock(page, 'intro-body')
+    await blockShell(page, 'design-quote').click({ modifiers: ['Shift'] })
+    await pastePlainText(page, 'Replacement paragraph')
+
+    const after = await waitForSerializedDocument(page, (serialized) => {
+      const children = getRootChildren(serialized)
+      const replacementId = children[1]
+      const replacementBlock =
+        replacementId === undefined ? undefined : serialized.document.blocks[replacementId]
+
+      return (
+        children.length === beforeChildren.length - 1 &&
+        !children.includes('intro-body') &&
+        !children.includes('design-quote') &&
+        replacementBlock?.type === 'paragraph' &&
+        readBlockPlainText(replacementBlock) === 'Replacement paragraph'
+      )
+    })
+    const children = getRootChildren(after)
+    const replacementBlock = expectBlock(after, expectDefined(children[1]))
+
+    expect(children[0]).toBe('intro-title')
+    expect(readBlockPlainText(replacementBlock)).toBe('Replacement paragraph')
+    expect(children[2]).toBe('sample-code')
+  })
+
+  test('pastes HTML clipboard data into imported blocks', async ({ page }) => {
+    const anchorBlockId = 'sample-code'
+    const before = await readSerializedDocument(page)
+    const beforeChildren = getRootChildren(before)
+
+    await activateBlock(page, anchorBlockId)
+    await pasteHtml(page, '<h2>HTML pasted title</h2><p>HTML pasted body</p>', 'Plain fallback')
+
+    const after = await waitForSerializedDocument(page, (serialized) => {
+      const insertedBlocks = findBlocksAfter(serialized, anchorBlockId, 2)
+      const headingBlock = insertedBlocks[0]
+      const paragraphBlock = insertedBlocks[1]
+
+      return (
+        headingBlock?.type === 'heading' &&
+        headingBlock.props?.level === 2 &&
+        readBlockPlainText(headingBlock) === 'HTML pasted title' &&
+        paragraphBlock?.type === 'paragraph' &&
+        readBlockPlainText(paragraphBlock) === 'HTML pasted body'
+      )
+    })
+    const insertedBlocks = findBlocksAfter(after, anchorBlockId, 2)
+
+    expect(after.document.version).toBeGreaterThan(before.document.version)
+    expect(getRootChildren(after)).toHaveLength(beforeChildren.length + 2)
+    expect(expectDefined(insertedBlocks[0]).type).toBe('heading')
+    expect(readBlockPlainText(expectDefined(insertedBlocks[1]))).toBe('HTML pasted body')
+  })
+
+  test('copies a structured multi-block range and pastes it after the active block', async ({
+    page,
+  }) => {
+    const before = await readSerializedDocument(page)
+    const beforeChildren = getRootChildren(before)
+
+    await activateBlock(page, 'intro-body')
+    await blockShell(page, 'design-quote').click({ modifiers: ['Shift'] })
+
+    await expect(blockShell(page, 'intro-body')).toHaveAttribute('data-selected', 'true')
+    await expect(blockShell(page, 'design-quote')).toHaveAttribute('data-selected', 'true')
+
+    const copied = await copyEditorSelection(page)
+
+    expect(copied.defaultPrevented).toBe(true)
+    expect(copied.vetraBlocksJson.length).toBeGreaterThan(0)
+    expect(copied.plainText).toContain('A virtualized block editor runtime')
+    expect(copied.plainText).toContain('Core stays framework-agnostic')
+
+    const clipboardDocument = parseSerializedDocument(copied.vetraBlocksJson)
+    expect(getRootChildren(clipboardDocument)).toEqual(['intro-body', 'design-quote'])
+
+    await activateBlock(page, 'sample-code')
+
+    const pasted = await pasteStructuredBlocks(page, copied.vetraBlocksJson)
+    expect(pasted.defaultPrevented).toBe(true)
+
+    const after = await waitForSerializedDocument(page, (serialized) => {
+      const insertedBlocks = findBlocksAfter(serialized, 'sample-code', 2)
+      const firstInsertedBlock = insertedBlocks[0]
+      const secondInsertedBlock = insertedBlocks[1]
+
+      return (
+        firstInsertedBlock !== undefined &&
+        secondInsertedBlock !== undefined &&
+        firstInsertedBlock.type === 'paragraph' &&
+        secondInsertedBlock.type === 'quote' &&
+        readBlockPlainText(firstInsertedBlock) ===
+          'A virtualized block editor runtime for large documents.' &&
+        readBlockPlainText(secondInsertedBlock) ===
+          'Core stays framework-agnostic. React renders first.'
+      )
+    })
+    const insertedBlocks = findBlocksAfter(after, 'sample-code', 2)
+
+    expect(after.document.version).toBeGreaterThan(before.document.version)
+    expect(getRootChildren(after)).toHaveLength(beforeChildren.length + 2)
+    expect(expectDefined(insertedBlocks[0]).id).toMatch(/^paste-/)
+    expect(expectDefined(insertedBlocks[1]).id).toMatch(/^paste-/)
+  })
+
+  test('duplicates and moves a selected block range from the toolbar', async ({ page }) => {
+    const before = await readSerializedDocument(page)
+
+    await activateBlock(page, 'intro-body')
+    await blockShell(page, 'design-quote').click({ modifiers: ['Shift'] })
+
+    const toolbar = page.getByRole('toolbar', { name: 'Block toolbar' })
+    await toolbar.getByRole('button', { name: 'Duplicate', exact: true }).click()
+
+    const afterDuplicate = await waitForSerializedDocument(page, (serialized) => {
+      const children = getRootChildren(serialized)
+
+      return (
+        children.includes('intro-body-copy') &&
+        children.includes('design-quote-copy') &&
+        children.indexOf('intro-body-copy') > children.indexOf('design-quote') &&
+        children.indexOf('design-quote-copy') === children.indexOf('intro-body-copy') + 1
+      )
+    })
+
+    expect(afterDuplicate.document.version).toBeGreaterThan(before.document.version)
+    expect(readBlockPlainText(expectBlock(afterDuplicate, 'intro-body-copy'))).toBe(
+      'A virtualized block editor runtime for large documents.',
+    )
+    await expect(blockShell(page, 'intro-body-copy')).toHaveAttribute('data-selected', 'true')
+    await expect(blockShell(page, 'design-quote-copy')).toHaveAttribute('data-selected', 'true')
+
+    await toolbar.getByRole('button', { name: 'Up', exact: true }).click()
+
+    const afterMove = await waitForSerializedDocument(page, (serialized) => {
+      const children = getRootChildren(serialized)
+
+      return (
+        children.indexOf('intro-body-copy') === children.indexOf('intro-body') + 1 &&
+        children.indexOf('design-quote-copy') === children.indexOf('intro-body-copy') + 1 &&
+        children.indexOf('design-quote') === children.indexOf('design-quote-copy') + 1
+      )
+    })
+
+    expect(afterMove.document.version).toBeGreaterThan(afterDuplicate.document.version)
+    await expect(blockShell(page, 'intro-body-copy')).toHaveAttribute('data-selected', 'true')
+    await expect(blockShell(page, 'design-quote-copy')).toHaveAttribute('data-selected', 'true')
+  })
+
   test('exports the current document as HTML from the exchange panel', async ({ page }) => {
     await exchangeFormatTab(page, 'HTML').click()
     await page.getByRole('button', { name: 'Export HTML' }).click()
@@ -527,6 +689,69 @@ async function pastePlainText(page: Page, text: string): Promise<void> {
       }),
     )
   }, text)
+}
+
+async function pasteHtml(page: Page, html: string, plainText: string): Promise<void> {
+  await editorRoot(page).evaluate(
+    (node, payload) => {
+      const clipboardData = new DataTransfer()
+      clipboardData.setData('text/html', payload.html)
+      clipboardData.setData('text/plain', payload.plainText)
+      node.dispatchEvent(
+        new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          clipboardData,
+        }),
+      )
+    },
+    { html, plainText },
+  )
+}
+
+async function copyEditorSelection(page: Page): Promise<ClipboardEventSnapshot> {
+  return dispatchEditorClipboardEvent(page, 'copy', {})
+}
+
+async function pasteStructuredBlocks(
+  page: Page,
+  vetraBlocksJson: string,
+): Promise<ClipboardEventSnapshot> {
+  return dispatchEditorClipboardEvent(page, 'paste', {
+    [VETRA_BLOCK_CLIPBOARD_MIME_TYPE]: vetraBlocksJson,
+    'text/plain': 'Plain text fallback should not be used when Vetra blocks are present.',
+  })
+}
+
+async function dispatchEditorClipboardEvent(
+  page: Page,
+  type: 'copy' | 'paste',
+  data: Readonly<Record<string, string>>,
+): Promise<ClipboardEventSnapshot> {
+  return editorRoot(page).evaluate(
+    (node, payload) => {
+      const clipboardData = new DataTransfer()
+
+      for (const [format, value] of Object.entries(payload.data)) {
+        clipboardData.setData(format, value)
+      }
+
+      const dispatched = node.dispatchEvent(
+        new ClipboardEvent(payload.type, {
+          bubbles: true,
+          cancelable: true,
+          clipboardData,
+        }),
+      )
+
+      return {
+        defaultPrevented: !dispatched,
+        plainText: clipboardData.getData('text/plain'),
+        vetraBlocksJson: clipboardData.getData(payload.mimeType),
+      }
+    },
+    { data, mimeType: VETRA_BLOCK_CLIPBOARD_MIME_TYPE, type },
+  )
 }
 
 async function dispatchEditorKeydown(
