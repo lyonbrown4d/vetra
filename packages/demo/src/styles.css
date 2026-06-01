@@ -67,6 +67,18 @@ textarea:focus-visible,
   background: var(--background);
 }
 
+.vetra-demo-shell[data-tools-open='false'][data-inspector-open='true'] {
+  grid-template-columns: minmax(520px, 1fr) minmax(300px, 360px);
+}
+
+.vetra-demo-shell[data-tools-open='true'][data-inspector-open='false'] {
+  grid-template-columns: minmax(300px, 350px) minmax(520px, 1fr);
+}
+
+.vetra-demo-shell[data-tools-open='false'][data-inspector-open='false'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .vetra-demo-sidebar,
 .vetra-demo-inspector {
   display: flex;
@@ -76,6 +88,11 @@ textarea:focus-visible,
   overflow: auto;
   background: var(--card);
   padding: 16px;
+}
+
+.vetra-demo-sidebar[hidden],
+.vetra-demo-inspector[hidden] {
+  display: none;
 }
 
 .vetra-demo-sidebar {
@@ -323,9 +340,56 @@ textarea:focus-visible,
   padding: 14px 20px;
 }
 
+.vetra-demo-editor-bar > div:first-child {
+  min-width: 0;
+}
+
 .vetra-demo-editor-bar h2 {
   margin-top: 2px;
   font-size: 16px;
+}
+
+.vetra-demo-editor-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: min(100%, 520px);
+}
+
+.vetra-demo-view-controls {
+  display: flex;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  padding: 3px;
+}
+
+.vetra-demo-view-controls button {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.vetra-demo-view-controls button:hover {
+  border-color: rgb(37 99 235 / 18%);
+  background: rgb(255 255 255 / 78%);
+  color: var(--foreground);
+}
+
+.vetra-demo-view-controls button[aria-pressed='true'] {
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm);
 }
 
 .vetra-demo-quick-stats {
@@ -888,6 +952,10 @@ textarea:focus-visible,
     grid-template-columns: minmax(280px, 330px) minmax(0, 1fr);
   }
 
+  .vetra-demo-shell[data-tools-open='false'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .vetra-demo-inspector {
     display: none;
   }
@@ -922,8 +990,22 @@ textarea:focus-visible,
     flex-direction: column;
   }
 
+  .vetra-demo-editor-bar__actions {
+    justify-content: stretch;
+    min-width: 0;
+  }
+
+  .vetra-demo-view-controls {
+    width: 100%;
+  }
+
+  .vetra-demo-view-controls button {
+    flex: 1 1 0;
+  }
+
   .vetra-demo-quick-stats {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
   }
 
   .vetra-demo-editor {

@@ -150,6 +150,8 @@ export function App() {
     createActivityLogEntry(0, 'Initial fixture loaded', initialDocument),
   ])
   const [activeExchangePanel, setActiveExchangePanel] = useState<ExchangePanel>('json')
+  const [toolsPanelOpen, setToolsPanelOpen] = useState(true)
+  const [inspectorPanelOpen, setInspectorPanelOpen] = useState(true)
   const [status, setStatus] = useState<ToolStatus>(idleStatus)
   const activitySequenceRef = useRef(1)
   const lastDocumentRef = useRef<DocumentState>(initialDocument)
@@ -164,6 +166,7 @@ export function App() {
   const activeEditorCount = editorDomMetrics.activeEditorCount
   const virtualizationRatio =
     rootBlockCount > 0 ? Math.min(1, mountedBlockCount / rootBlockCount) : 0
+  const focusMode = !toolsPanelOpen && !inspectorPanelOpen
   const activeExchangeDefinition = getExchangePanel(activeExchangePanel)
   const latestActivity = activityLog[0]
   const reactScanRows = useMemo(
@@ -342,8 +345,17 @@ export function App() {
   }, [htmlText, loadDocument])
 
   return (
-    <main className="vetra-demo-shell">
-      <aside className="vetra-demo-sidebar" aria-label="Vetra playground tools">
+    <main
+      className="vetra-demo-shell"
+      data-inspector-open={inspectorPanelOpen ? 'true' : 'false'}
+      data-tools-open={toolsPanelOpen ? 'true' : 'false'}
+    >
+      <aside
+        aria-label="Vetra playground tools"
+        className="vetra-demo-sidebar"
+        hidden={!toolsPanelOpen}
+        id="vetra-playground-tools"
+      >
         <header className="vetra-demo-heading">
           <p className="vetra-demo-eyebrow">Playground</p>
           <h1>Vetra</h1>
@@ -517,20 +529,60 @@ export function App() {
             <p className="vetra-demo-eyebrow">Live editor</p>
             <h2 id="workbench-title">Block document canvas</h2>
           </div>
-          <dl aria-label="Editor quick stats" className="vetra-demo-quick-stats">
-            <div>
-              <dt>Blocks</dt>
-              <dd>{formatNumber(blockCount)}</dd>
+          <div className="vetra-demo-editor-bar__actions">
+            <div aria-label="Workspace panels" className="vetra-demo-view-controls" role="group">
+              <button
+                aria-controls="vetra-playground-tools"
+                aria-pressed={toolsPanelOpen}
+                onClick={() => {
+                  setToolsPanelOpen((current) => !current)
+                }}
+                type="button"
+              >
+                Tools
+              </button>
+              <button
+                aria-controls="vetra-playground-inspector"
+                aria-pressed={inspectorPanelOpen}
+                onClick={() => {
+                  setInspectorPanelOpen((current) => !current)
+                }}
+                type="button"
+              >
+                Inspector
+              </button>
+              <button
+                aria-pressed={focusMode}
+                onClick={() => {
+                  if (focusMode) {
+                    setToolsPanelOpen(true)
+                    setInspectorPanelOpen(true)
+                    return
+                  }
+
+                  setToolsPanelOpen(false)
+                  setInspectorPanelOpen(false)
+                }}
+                type="button"
+              >
+                Focus
+              </button>
             </div>
-            <div>
-              <dt>Mounted</dt>
-              <dd>{formatNumber(mountedBlockCount)}</dd>
-            </div>
-            <div>
-              <dt>Active</dt>
-              <dd>{formatNumber(activeEditorCount)}</dd>
-            </div>
-          </dl>
+            <dl aria-label="Editor quick stats" className="vetra-demo-quick-stats">
+              <div>
+                <dt>Blocks</dt>
+                <dd>{formatNumber(blockCount)}</dd>
+              </div>
+              <div>
+                <dt>Mounted</dt>
+                <dd>{formatNumber(mountedBlockCount)}</dd>
+              </div>
+              <div>
+                <dt>Active</dt>
+                <dd>{formatNumber(activeEditorCount)}</dd>
+              </div>
+            </dl>
+          </div>
         </header>
 
         <section
@@ -551,7 +603,12 @@ export function App() {
         </section>
       </section>
 
-      <section className="vetra-demo-inspector" aria-label="Vetra runtime inspector">
+      <section
+        aria-label="Vetra runtime inspector"
+        className="vetra-demo-inspector"
+        hidden={!inspectorPanelOpen}
+        id="vetra-playground-inspector"
+      >
         <section className="vetra-demo-panel" aria-labelledby="runtime-panel-title">
           <div className="vetra-demo-panel__header">
             <h2 id="runtime-panel-title">Runtime stats</h2>

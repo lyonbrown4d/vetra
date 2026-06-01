@@ -38,6 +38,37 @@ test.describe('Vetra demo editor main editing path', () => {
     await expect(editorSurface(page)).toBeVisible()
   })
 
+  test('toggles playground panels without unmounting the editor surface', async ({ page }) => {
+    const shell = page.locator('.vetra-demo-shell')
+    const toolsPanel = page.getByLabel('Vetra playground tools')
+    const inspectorPanel = page.getByLabel('Vetra runtime inspector')
+    const toolsToggle = page.getByRole('button', { name: 'Tools' })
+    const inspectorToggle = page.getByRole('button', { name: 'Inspector' })
+    const focusToggle = page.getByRole('button', { name: 'Focus' })
+
+    await expect(shell).toHaveAttribute('data-tools-open', 'true')
+    await expect(shell).toHaveAttribute('data-inspector-open', 'true')
+    await expect(toolsPanel).toBeVisible()
+    await expect(inspectorPanel).toBeVisible()
+
+    await toolsToggle.click()
+    await expect(shell).toHaveAttribute('data-tools-open', 'false')
+    await expect(toolsPanel).toBeHidden()
+    await expect(editorSurface(page)).toBeVisible()
+
+    await inspectorToggle.click()
+    await expect(shell).toHaveAttribute('data-inspector-open', 'false')
+    await expect(inspectorPanel).toBeHidden()
+    await expect(focusToggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(editorSurface(page)).toBeVisible()
+
+    await focusToggle.click()
+    await expect(shell).toHaveAttribute('data-tools-open', 'true')
+    await expect(shell).toHaveAttribute('data-inspector-open', 'true')
+    await expect(toolsPanel).toBeVisible()
+    await expect(inspectorPanel).toBeVisible()
+  })
+
   test('shows the popup toolbar only after selecting text and converts the active block', async ({
     page,
   }) => {
