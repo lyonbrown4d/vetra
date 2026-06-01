@@ -493,11 +493,20 @@ function findLanguage(element: Element | undefined): string | undefined {
 
   for (const name of classNames) {
     if (name.startsWith('language-') && name.length > 'language-'.length) {
-      return name.slice('language-'.length)
+      const language = sanitizeCodeLanguage(name.slice('language-'.length))
+      if (language !== undefined) {
+        return language
+      }
     }
   }
 
   return undefined
+}
+
+function sanitizeCodeLanguage(rawLanguage: string): string | undefined {
+  const safeToken = rawLanguage.trim().replace(/[^A-Za-z0-9_+-]/g, '')
+
+  return safeToken.length === 0 ? undefined : safeToken
 }
 
 function collectCodeText(node: Node): string {

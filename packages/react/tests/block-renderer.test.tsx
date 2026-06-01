@@ -212,6 +212,30 @@ describe('BlockRenderer active lifecycle', () => {
       rendered.cleanup()
     }
   })
+
+  it('disables the gutter drag handle outside a sortable virtual list', () => {
+    const editorDocument = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'A'), paragraph('block-b', 'B')],
+    })
+    const editor = createEditor(createEditorState(editorDocument))
+    const rendered = renderBlockRenderer(editor, [paragraphPlugin], 'block-a')
+
+    try {
+      const dragButton = rendered.container.querySelector(
+        '[data-vetra-block-drag-handle="block-a"]',
+      )
+      if (!(dragButton instanceof HTMLButtonElement)) {
+        throw new Error('Expected gutter drag button to render.')
+      }
+
+      expect(dragButton.disabled).toBe(true)
+      expect(dragButton.getAttribute('aria-disabled')).toBe('true')
+      expect(dragButton.getAttribute('data-vetra-block-drag-handle-disabled')).toBe('true')
+    } finally {
+      rendered.cleanup()
+    }
+  })
 })
 
 function readParagraphText(block: ParagraphBlock): string {

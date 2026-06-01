@@ -345,6 +345,17 @@ describe('Block toolbar state', () => {
 })
 
 describe('BlockToolbar', () => {
+  it('does not render into the document chrome before a block is active', () => {
+    const editor = createEditor(createEditorState(nestedDocument()))
+    const rendered = renderToolbar(editor)
+
+    try {
+      expect(rendered.container.querySelector('[data-vetra-block-toolbar]')).toBeNull()
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
   it('dispatches convertBlockType and leaves block identity and children to core', () => {
     const editor = createEditor({
       document: nestedDocument(),

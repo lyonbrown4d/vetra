@@ -122,6 +122,26 @@ describe('@vetra/import-html', () => {
     })
   })
 
+  it('sanitizes imported code language classes and skips empty sanitized tokens', () => {
+    const document = htmlToDocument(
+      [
+        '<pre><code class="language-ts<script>">const value = 1</code></pre>',
+        '<pre><code class="language-<> language-js">console.log(1)</code></pre>',
+      ].join(''),
+    )
+
+    expect(block(document, 'html-1')).toMatchObject({
+      type: 'code',
+      props: { language: 'tsscript' },
+      content: 'const value = 1',
+    })
+    expect(block(document, 'html-2')).toMatchObject({
+      type: 'code',
+      props: { language: 'js' },
+      content: 'console.log(1)',
+    })
+  })
+
   it('keeps inline code wrapped by inline elements in paragraph flow', () => {
     const document = htmlToDocument('<span><code>inline()</code></span> text')
 

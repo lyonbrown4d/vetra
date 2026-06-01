@@ -99,6 +99,15 @@ describe('@vetra/export-markdown', () => {
     expect(documentToMarkdown(document)).toBe(['````', '```nested```', '````'].join('\n'))
   })
 
+  it('sanitizes code fence language tokens before exporting Markdown', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [code('code', 'const value = 1', 'ts<script> extra')],
+    })
+
+    expect(documentToMarkdown(document)).toBe(['```tsscript', 'const value = 1', '```'].join('\n'))
+  })
+
   it('falls back for unknown blocks without throwing', () => {
     const document = createDocument({
       id: 'doc',

@@ -314,6 +314,28 @@ describe('paste handler', () => {
     expect(editor.getState().document).toBe(document)
   })
 
+  it('rejects malformed clipboard payloads without changing the document', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('anchor', 'Anchor')],
+    })
+    const editor = createEditor(createEditorState(document))
+
+    const result = pasteClipboardPayloadIntoEditor({
+      editor,
+      target: { referenceBlockId: 'anchor' },
+      payload: '{not valid json',
+      idFactory: ({ index }) => `paste-${String(index)}`,
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe('pasteStrategyFailed')
+    }
+    expect(editor.getState().document).toBe(document)
+    expect(editor.getState().document.children.root).toEqual(['anchor'])
+  })
+
   it('pastes a nested clipboard document as one undo step', () => {
     const document = createDocument({
       id: 'doc',

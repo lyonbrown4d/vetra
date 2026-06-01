@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import type { CSSProperties, MouseEvent } from 'react'
 import {
   useBlockToolbar,
   type BlockToolbarActionId,
@@ -10,6 +10,8 @@ import type { BlockToolbarTarget } from '@vetra/react/toolbar/conversion'
 
 export interface BlockToolbarProps extends UseBlockToolbarOptions {
   readonly className?: string
+  readonly style?: CSSProperties
+  readonly visible?: boolean
   readonly 'aria-label'?: string
   readonly onAction?: (
     actionId: BlockToolbarActionId,
@@ -25,13 +27,22 @@ export interface BlockToolbarProps extends UseBlockToolbarOptions {
 
 export function BlockToolbar(props: BlockToolbarProps) {
   const toolbar = useBlockToolbar(props)
+  const visible = props.visible ?? toolbar.visible
+
+  if (!visible) {
+    return null
+  }
 
   return (
     <div
       aria-label={props['aria-label'] ?? 'Block toolbar'}
       className={props.className}
       data-vetra-block-toolbar=""
+      onMouseDown={(event) => {
+        event.preventDefault()
+      }}
       role="toolbar"
+      style={props.style}
     >
       {toolbar.actionItems.map((item) => (
         <button

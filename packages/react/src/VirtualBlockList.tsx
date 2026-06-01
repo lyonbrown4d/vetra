@@ -30,7 +30,8 @@ export function VirtualBlockList(props: VirtualBlockListProps) {
   const sortableBlockIds = virtualItems
     .map((virtualItem) => blockIds[virtualItem.index])
     .filter(isBlockId)
-  const dragEnabled = props.blockIds === undefined && sortableBlockIds.length > 1
+  const dragEnabled =
+    props.blockIds === undefined && blockIds.length > 1 && sortableBlockIds.length > 0
   const listItems = virtualItems.map((virtualItem) => {
     const blockId = blockIds[virtualItem.index]
     if (blockId === undefined) {

@@ -135,8 +135,14 @@ function readCodeLanguage(props: DocBlock['props']): string | undefined {
     return undefined
   }
 
-  const trimmed = language.trim()
-  return trimmed.length === 0 ? undefined : trimmed.split(/\s+/)[0]
+  const firstToken = language.trim().split(/\s+/)[0]
+  if (firstToken === undefined) {
+    return undefined
+  }
+
+  const safeToken = firstToken.replace(/[^A-Za-z0-9_+-]/g, '')
+
+  return safeToken.length === 0 ? undefined : safeToken
 }
 
 function chooseBacktickFence(content: string): string {

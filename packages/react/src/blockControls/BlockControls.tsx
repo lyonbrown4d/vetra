@@ -82,6 +82,7 @@ export const BlockControls = memo(function BlockControls(props: BlockControlsPro
         className="vetra-block-controls__button vetra-block-controls__button--drag"
         data-vetra-block-drag-handle={dragHandle.blockId ?? props.blockId}
         data-vetra-block-drag-handle-disabled={dragHandle.disabled ? 'true' : 'false'}
+        disabled={dragHandle.disabled}
         onClick={stopDragClick}
         ref={dragHandle.setActivatorNodeRef}
         title="Drag block"

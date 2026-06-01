@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ClipboardEvent,
   type KeyboardEvent,
   type PointerEvent,
@@ -93,6 +94,11 @@ interface SlashMenuState {
   readonly anchorElement?: HTMLElement | null
 }
 
+interface InlineToolbarPosition {
+  readonly left: number
+  readonly top: number
+}
+
 const htmlClipboardMimeType = 'text/html'
 const htmlPasteRootId = '__vetra-html-paste-root__'
 const htmlPasteStrategy = createDocumentPasteStrategy((input, context) =>
@@ -107,8 +113,29 @@ function EditorSurface(props: EditorSurfaceProps) {
   const editor = useEditor()
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const [slashMenuState, setSlashMenuState] = useState<SlashMenuState | null>(null)
+  const [inlineToolbarPosition, setInlineToolbarPosition] = useState<InlineToolbarPosition | null>(
+    null,
+  )
   const slashMenuAnchorElement =
     slashMenuState === null ? null : resolveSlashMenuAnchor(surfaceRef.current, slashMenuState)
+  const inlineToolbarStyle = createInlineToolbarStyle(inlineToolbarPosition)
+
+  const updateInlineToolbarPosition = useCallback(() => {
+    setInlineToolbarPosition(resolveInlineToolbarPosition(surfaceRef.current))
+  }, [])
+
+  useEffect(() => {
+    const ownerDocument = surfaceRef.current?.ownerDocument ?? globalThis.document
+    ownerDocument.addEventListener('selectionchange', updateInlineToolbarPosition)
+    ownerDocument.addEventListener('scroll', updateInlineToolbarPosition, true)
+    ownerDocument.defaultView?.addEventListener('resize', updateInlineToolbarPosition)
+
+    return () => {
+      ownerDocument.removeEventListener('selectionchange', updateInlineToolbarPosition)
+      ownerDocument.removeEventListener('scroll', updateInlineToolbarPosition, true)
+      ownerDocument.defaultView?.removeEventListener('resize', updateInlineToolbarPosition)
+    }
+  }, [updateInlineToolbarPosition])
 
   const closeSlashMenu = useCallback(() => {
     setSlashMenuState(null)
@@ -147,8 +174,7 @@ function EditorSurface(props: EditorSurfaceProps) {
         !isComposingKeyEvent(event) &&
         slashMenuState === null &&
         isSelectAllBlocksShortcut(event) &&
-        !isTextInputElement(event.target) &&
-        (!isLexicalActiveEditorTarget(event.target) || hasMultipleTopLevelBlocks(editor))
+        shouldHandleSelectAllBlocksShortcut(editor, event.target)
       ) {
         event.preventDefault()
         event.stopPropagation()
@@ -169,6 +195,10 @@ function EditorSurface(props: EditorSurfaceProps) {
       }
 
       if (slashMenuState !== null) {
+        if (shouldDeferShellKeyHandling(event.target) && !isSlashMenuTarget(event.target)) {
+          return
+        }
+
         if (event.key === 'Escape') {
           event.preventDefault()
           closeSlashMenu()
@@ -178,7 +208,7 @@ function EditorSurface(props: EditorSurfaceProps) {
         if (event.key === 'Backspace') {
           event.preventDefault()
           setSlashMenuState((current) =>
-            current === null
+            current === null || current.query.length === 0
               ? null
               : {
                   ...current,
@@ -203,24 +233,8 @@ function EditorSurface(props: EditorSurfaceProps) {
         return
       }
 
-      if (isUndoShortcut(event)) {
-        if (undoEditorHistory(editor)) {
-          event.preventDefault()
-        }
-
-        return
-      }
-
-      if (isRedoShortcut(event)) {
-        if (redoEditorHistory(editor)) {
-          event.preventDefault()
-        }
-
-        return
-      }
-
       if (isSelectAllBlocksShortcut(event)) {
-        if (isTextInputElement(event.target)) {
+        if (!shouldHandleSelectAllBlocksShortcut(editor, event.target)) {
           return
         }
 
@@ -234,17 +248,7 @@ function EditorSurface(props: EditorSurfaceProps) {
         return
       }
 
-      if (event.key === 'Escape') {
-        const blockId = collapseSelectionToBlock(editor)
-        if (blockId !== undefined) {
-          event.preventDefault()
-          focusBlockShell(surfaceRef.current, blockId)
-        }
-
-        return
-      }
-
-      if (event.key === '/' && !hasSlashMenuModifier(event) && !isTextInputElement(event.target)) {
+      if (event.key === '/' && !hasSlashMenuModifier(event) && shouldOpenSlashMenu(event.target)) {
         const activeBlockId = getActiveBlockId(editor)
         if (activeBlockId !== undefined) {
           event.preventDefault()
@@ -261,7 +265,33 @@ function EditorSurface(props: EditorSurfaceProps) {
         return
       }
 
-      if (isTextEditingElement(event.target)) {
+      if (shouldDeferShellKeyHandling(event.target)) {
+        return
+      }
+
+      if (isUndoShortcut(event)) {
+        if (undoEditorHistory(editor)) {
+          event.preventDefault()
+        }
+
+        return
+      }
+
+      if (isRedoShortcut(event)) {
+        if (redoEditorHistory(editor)) {
+          event.preventDefault()
+        }
+
+        return
+      }
+
+      if (event.key === 'Escape') {
+        const blockId = collapseSelectionToBlock(editor)
+        if (blockId !== undefined) {
+          event.preventDefault()
+          focusBlockShell(surfaceRef.current, blockId)
+        }
+
         return
       }
 
@@ -327,7 +357,7 @@ function EditorSurface(props: EditorSurfaceProps) {
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
       const activeBlockId = getActiveBlockId(editor)
-      if (activeBlockId === undefined || isLexicalActiveEditorTarget(event.target)) {
+      if (activeBlockId === undefined || isTextEditingElement(event.target)) {
         return
       }
 
@@ -385,7 +415,7 @@ function EditorSurface(props: EditorSurfaceProps) {
 
   const handleCopy = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
-      if (isLexicalActiveEditorTarget(event.target)) {
+      if (isTextEditingElement(event.target)) {
         return
       }
 
@@ -409,7 +439,7 @@ function EditorSurface(props: EditorSurfaceProps) {
 
   const handleCut = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
-      if (isLexicalActiveEditorTarget(event.target)) {
+      if (isTextEditingElement(event.target)) {
         return
       }
 
@@ -441,14 +471,20 @@ function EditorSurface(props: EditorSurfaceProps) {
     <div
       className={createEditorRootClassName(props.className)}
       onPointerDownCapture={handlePointerDownCapture}
+      onPointerUp={updateInlineToolbarPosition}
       onKeyDown={handleKeyDown}
       onKeyDownCapture={handleKeyDownCapture}
+      onKeyUp={updateInlineToolbarPosition}
       onCopy={handleCopy}
       onCut={handleCut}
       onPaste={handlePaste}
       ref={surfaceRef}
     >
-      <BlockToolbar className="vetra-block-toolbar" />
+      <BlockToolbar
+        className="vetra-block-toolbar"
+        visible={inlineToolbarPosition !== null}
+        {...(inlineToolbarStyle === undefined ? {} : { style: inlineToolbarStyle })}
+      />
       {slashMenuState === null ? null : (
         <SlashMenu
           anchorElement={slashMenuAnchorElement}
@@ -468,6 +504,150 @@ function EditorSurface(props: EditorSurfaceProps) {
 
 function createEditorRootClassName(className: string | undefined): string {
   return className === undefined ? 'vetra-editor-root' : `vetra-editor-root ${className}`
+}
+
+function createInlineToolbarStyle(
+  position: InlineToolbarPosition | null,
+): CSSProperties | undefined {
+  if (position === null) {
+    return undefined
+  }
+
+  return {
+    left: position.left,
+    opacity: 1,
+    position: 'fixed',
+    right: 'auto',
+    top: position.top,
+    transform: 'translate(-50%, calc(-100% - 8px))',
+  }
+}
+
+function resolveInlineToolbarPosition(root: HTMLElement | null): InlineToolbarPosition | null {
+  if (root === null) {
+    return null
+  }
+
+  const selection = root.ownerDocument.getSelection()
+  if (
+    selection === null ||
+    selection.isCollapsed ||
+    selection.rangeCount === 0 ||
+    selection.toString().trim().length === 0
+  ) {
+    return null
+  }
+
+  const inlineEditor = resolveInlineEditorSelectionTarget(root, selection)
+  if (inlineEditor === null) {
+    return null
+  }
+
+  const rect = readSelectionRect(selection.getRangeAt(0), inlineEditor)
+  if (rect === null) {
+    return null
+  }
+
+  const viewportWidth = root.ownerDocument.defaultView?.innerWidth ?? rect.left + rect.width
+  const left = clampNumber(rect.left + rect.width / 2, 24, Math.max(24, viewportWidth - 24))
+
+  return {
+    left,
+    top: Math.max(8, rect.top),
+  }
+}
+
+function resolveInlineEditorSelectionTarget(
+  root: HTMLElement,
+  selection: Selection,
+): HTMLElement | null {
+  const anchorElement = getSelectionElement(selection.anchorNode)
+  const focusElement = getSelectionElement(selection.focusNode)
+  const anchorInlineEditor = anchorElement?.closest<HTMLElement>(
+    '.vetra-inline-editor[contenteditable="true"]',
+  )
+  const focusInlineEditor = focusElement?.closest<HTMLElement>(
+    '.vetra-inline-editor[contenteditable="true"]',
+  )
+
+  if (
+    anchorInlineEditor === null ||
+    anchorInlineEditor === undefined ||
+    focusInlineEditor !== anchorInlineEditor ||
+    !root.contains(anchorInlineEditor)
+  ) {
+    return null
+  }
+
+  return anchorInlineEditor
+}
+
+function getSelectionElement(node: Node | null): HTMLElement | null {
+  if (node instanceof HTMLElement) {
+    return node
+  }
+
+  return node?.parentElement ?? null
+}
+
+interface SelectionRect {
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
+}
+
+function readSelectionRect(range: Range, fallbackElement: HTMLElement): SelectionRect | null {
+  const measuredRect = readNonEmptyRangeRect(range)
+  if (measuredRect !== null) {
+    return measuredRect
+  }
+
+  const fallbackRect = fallbackElement.getBoundingClientRect()
+  return isFiniteRect(fallbackRect) ? fallbackRect : null
+}
+
+function readNonEmptyRangeRect(range: Range): SelectionRect | null {
+  const rangeWithRects = range as Range & {
+    readonly getBoundingClientRect?: () => DOMRect
+    readonly getClientRects?: () => DOMRectList
+  }
+
+  if (typeof rangeWithRects.getBoundingClientRect === 'function') {
+    const rect = rangeWithRects.getBoundingClientRect()
+    if (isNonEmptyFiniteRect(rect)) {
+      return rect
+    }
+  }
+
+  if (typeof rangeWithRects.getClientRects !== 'function') {
+    return null
+  }
+
+  for (const rect of Array.from(rangeWithRects.getClientRects())) {
+    if (isNonEmptyFiniteRect(rect)) {
+      return rect
+    }
+  }
+
+  return null
+}
+
+function isNonEmptyFiniteRect(rect: SelectionRect): boolean {
+  return isFiniteRect(rect) && (rect.width > 0 || rect.height > 0)
+}
+
+function isFiniteRect(rect: SelectionRect): boolean {
+  return (
+    Number.isFinite(rect.left) &&
+    Number.isFinite(rect.top) &&
+    Number.isFinite(rect.width) &&
+    Number.isFinite(rect.height)
+  )
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }
 
 function getActiveBlockId(editor: EditorRuntime): BlockId | undefined {
@@ -585,6 +765,30 @@ function isSelectAllBlocksShortcut(event: KeyboardEvent<HTMLElement>): boolean {
   return hasPrimaryShortcutModifier(event) && !event.shiftKey && event.key.toLowerCase() === 'a'
 }
 
+function shouldHandleSelectAllBlocksShortcut(editor: EditorRuntime, target: EventTarget): boolean {
+  if (isTextInputElement(target) || isEditorChromeControlTarget(target)) {
+    return false
+  }
+
+  if (isLexicalActiveEditorTarget(target)) {
+    return hasMultipleTopLevelBlocks(editor)
+  }
+
+  return !isTextEditingElement(target)
+}
+
+function shouldOpenSlashMenu(target: EventTarget): boolean {
+  if (isTextInputElement(target) || isEditorChromeControlTarget(target)) {
+    return false
+  }
+
+  if (isLexicalActiveEditorTarget(target)) {
+    return true
+  }
+
+  return !isTextEditingElement(target)
+}
+
 function hasMultipleTopLevelBlocks(editor: EditorRuntime): boolean {
   const state = editor.getState()
   const rootBlocks = state.document.children[state.document.rootId] ?? []
@@ -605,6 +809,22 @@ function isTextEditingElement(target: EventTarget): boolean {
     target instanceof HTMLElement &&
     (target.isContentEditable || target.closest('[contenteditable="true"]') !== null)
   )
+}
+
+function shouldDeferShellKeyHandling(target: EventTarget): boolean {
+  return isTextEditingElement(target) || isEditorChromeControlTarget(target)
+}
+
+function isEditorChromeControlTarget(target: EventTarget): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.closest('[data-vetra-block-toolbar]') !== null ||
+      target.closest('[data-vetra-block-controls]') !== null)
+  )
+}
+
+function isSlashMenuTarget(target: EventTarget): boolean {
+  return target instanceof HTMLElement && target.closest('[data-vetra-slash-menu]') !== null
 }
 
 function isNodeTarget(target: EventTarget): target is Node {

@@ -70,6 +70,18 @@ describe('@vetra/import-markdown', () => {
     expect(inlineText(block(document, 'md-2')?.content)).toBe('| a | b |')
   })
 
+  it('sanitizes imported code fence language tokens before storing block props', () => {
+    const document = markdownToDocument(
+      ['```ts<script> extra', 'const value = 1', '```'].join('\n'),
+    )
+
+    expect(block(document, 'md-1')).toMatchObject({
+      type: 'code',
+      props: { language: 'tsscript' },
+      content: 'const value = 1',
+    })
+  })
+
   it('allows callers to provide document and block identity strategy', () => {
     const document = markdownToDocument('## Custom', {
       documentId: 'custom-doc',

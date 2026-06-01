@@ -199,7 +199,7 @@ function parseFenceOpening(line: string): FenceOpening | undefined {
   }
 
   const rawInfo = match[3]?.trim() ?? ''
-  const language = rawInfo.length === 0 ? undefined : rawInfo.split(/\s+/)[0]
+  const language = sanitizeCodeLanguage(rawInfo)
 
   return {
     marker,
@@ -217,6 +217,17 @@ function isFenceClosing(line: string, opening: FenceOpening): boolean {
   }
 
   return markerCount >= opening.length && trimmed.slice(markerCount).trim().length === 0
+}
+
+function sanitizeCodeLanguage(rawInfo: string): string | undefined {
+  const firstToken = rawInfo.split(/\s+/)[0]
+  if (firstToken === undefined) {
+    return undefined
+  }
+
+  const safeToken = firstToken.replace(/[^A-Za-z0-9_+-]/g, '')
+
+  return safeToken.length === 0 ? undefined : safeToken
 }
 
 function parseHeading(

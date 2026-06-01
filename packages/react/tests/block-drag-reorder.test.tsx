@@ -471,6 +471,47 @@ describe('VirtualBlockList drag reorder', () => {
     }
   })
 
+  it('keeps drag handles active when virtualization only mounts one block from a larger document', () => {
+    virtualizerMock.setRange(1, 1)
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'A'), paragraph('block-b', 'B'), paragraph('block-c', 'C')],
+    })
+    const commands: EditorCommand[] = []
+    const recordingEditor = createRecordingEditor(
+      createEditor(createEditorState(document)),
+      commands,
+    )
+    const rendered = renderVirtualList(recordingEditor)
+
+    try {
+      expect(rendered.container.querySelector('[data-vetra-sortable-block="block-a"]')).toBeNull()
+      expect(
+        rendered.container.querySelector('[data-vetra-sortable-block="block-b"]'),
+      ).not.toBeNull()
+      expect(rendered.container.querySelector('[data-vetra-sortable-block="block-c"]')).toBeNull()
+      expect(rendered.container.querySelector('[data-vetra-test-dnd-context]')).not.toBeNull()
+      expect(
+        rendered.container
+          .querySelector('[data-vetra-test-sortable-items]')
+          ?.getAttribute('data-vetra-test-sortable-items'),
+      ).toBe('block-b')
+
+      const pluginDragHandle = rendered.container.querySelector<HTMLButtonElement>(
+        '[data-vetra-test-drag-handle="block-b"]',
+      )
+      const gutterDragHandle = rendered.container.querySelector<HTMLButtonElement>(
+        '[data-vetra-block-drag-handle="block-b"]',
+      )
+
+      expect(pluginDragHandle?.disabled).toBe(false)
+      expect(gutterDragHandle?.disabled).toBe(false)
+      expect(gutterDragHandle?.getAttribute('data-vetra-block-drag-handle-disabled')).toBe('false')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
   it('marks the drag-over block as drop target and clears it after drag ends', () => {
     const document = createDocument({
       id: 'doc',

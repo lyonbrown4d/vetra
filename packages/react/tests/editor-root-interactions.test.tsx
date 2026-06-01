@@ -56,6 +56,20 @@ const basicTestBlocks: readonly AnyReactBlockPlugin[] = [
   createReadonlyPlugin('divider'),
 ]
 
+const textEditingTestBlocks: readonly AnyReactBlockPlugin[] = [
+  ...basicTestBlocks,
+  {
+    type: 'custom-contenteditable',
+    readonlyRenderer: CustomContentEditableBlock,
+    activeRenderer: CustomContentEditableBlock,
+  },
+  {
+    type: 'code-textarea',
+    readonlyRenderer: ReadonlyBlock,
+    activeRenderer: CodeTextareaBlock,
+  },
+]
+
 function createReadonlyPlugin(type: string): AnyReactBlockPlugin {
   if (type === 'paragraph') {
     return {
@@ -92,6 +106,24 @@ function ActiveEditableBlock(props: BlockRendererProps) {
   )
 }
 
+function CustomContentEditableBlock(props: BlockRendererProps) {
+  return (
+    <div contentEditable data-custom-contenteditable="" suppressContentEditableWarning>
+      {readBlockText(props.block)}
+    </div>
+  )
+}
+
+function CodeTextareaBlock(props: BlockRendererProps) {
+  return (
+    <textarea
+      aria-label="Custom code textarea"
+      data-code-textarea=""
+      defaultValue={readBlockText(props.block)}
+    />
+  )
+}
+
 function paragraph(id: string, text: string): ParagraphBlock {
   return {
     id,
@@ -100,7 +132,26 @@ function paragraph(id: string, text: string): ParagraphBlock {
   }
 }
 
-function renderEditor(editorDocument: DocumentState) {
+function customContentEditableBlock(id: string, text: string): DocBlock {
+  return {
+    id,
+    type: 'custom-contenteditable',
+    content: text,
+  }
+}
+
+function codeTextareaBlock(id: string, text: string): DocBlock {
+  return {
+    id,
+    type: 'code-textarea',
+    content: text,
+  }
+}
+
+function renderEditor(
+  editorDocument: DocumentState,
+  blocks: readonly AnyReactBlockPlugin[] = basicTestBlocks,
+) {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -109,7 +160,7 @@ function renderEditor(editorDocument: DocumentState) {
   act(() => {
     root.render(
       <EditorRoot
-        blocks={basicTestBlocks}
+        blocks={blocks}
         initialValue={editorDocument}
         onChange={(nextDocument) => {
           latestDocument = nextDocument
@@ -168,14 +219,14 @@ function clickBlock(container: Element, blockId: string, options: ClickBlockOpti
 
 interface PressKeyOptions {
   readonly shiftKey?: boolean
+  readonly altKey?: boolean
+  readonly ctrlKey?: boolean
+  readonly metaKey?: boolean
+  readonly isComposing?: boolean
 }
 
 function pressEditorKey(container: Element, key: string, options: PressKeyOptions = {}): void {
-  act(() => {
-    getEditorRoot(container).dispatchEvent(
-      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key, ...options }),
-    )
-  })
+  dispatchKeyDown(getEditorRoot(container), key, options)
 }
 
 function pressActiveElementKey(key: string, options: PressKeyOptions = {}): void {
@@ -184,11 +235,36 @@ function pressActiveElementKey(key: string, options: PressKeyOptions = {}): void
     throw new Error('Expected an active element to receive keyboard input.')
   }
 
-  act(() => {
-    activeElement.dispatchEvent(
-      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key, ...options }),
-    )
+  dispatchKeyDown(activeElement, key, options)
+}
+
+function dispatchKeyDown(
+  target: HTMLElement,
+  key: string,
+  options: PressKeyOptions = {},
+): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', {
+    altKey: options.altKey ?? false,
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: options.ctrlKey ?? false,
+    key,
+    metaKey: options.metaKey ?? false,
+    shiftKey: options.shiftKey ?? false,
   })
+
+  if (options.isComposing === true) {
+    Object.defineProperty(event, 'isComposing', {
+      configurable: true,
+      value: true,
+    })
+  }
+
+  act(() => {
+    target.dispatchEvent(event)
+  })
+
+  return event
 }
 
 function expectBlockSelected(container: Element, blockId: string, selected: boolean): void {
@@ -215,6 +291,24 @@ function getActiveEditableBlock(container: Element): HTMLElement {
   return editor
 }
 
+function getCustomContentEditable(container: Element): HTMLElement {
+  const editor = container.querySelector('[data-custom-contenteditable]')
+  if (!(editor instanceof HTMLElement)) {
+    throw new Error('Expected custom contenteditable to render.')
+  }
+
+  return editor
+}
+
+function getCodeTextarea(container: Element): HTMLTextAreaElement {
+  const textarea = container.querySelector('[data-code-textarea]')
+  if (!(textarea instanceof HTMLTextAreaElement)) {
+    throw new Error('Expected code textarea to render.')
+  }
+
+  return textarea
+}
+
 function getButton(container: Element, selector: string): HTMLButtonElement {
   const button = container.querySelector(selector)
   if (!(button instanceof HTMLButtonElement)) {
@@ -238,8 +332,31 @@ function querySlashMenu(container: Element): HTMLElement | null {
   return menu instanceof HTMLElement ? menu : null
 }
 
+function queryBlockToolbar(container: Element): HTMLElement | null {
+  const toolbar = container.querySelector('[data-vetra-block-toolbar]')
+  return toolbar instanceof HTMLElement ? toolbar : null
+}
+
+function selectActiveEditableBlockText(container: Element): void {
+  const editor = getActiveEditableBlock(container)
+  const selection = window.getSelection()
+  if (selection === null) {
+    throw new Error('Expected browser selection to be available.')
+  }
+
+  act(() => {
+    editor.focus()
+
+    const range = document.createRange()
+    range.selectNodeContents(editor)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+  })
+}
+
 describe('EditorRoot integrated interactions', () => {
-  it('converts the active block from the toolbar', () => {
+  it('shows the popup toolbar only after selecting text and converts the active block', () => {
     const rendered = renderEditor(
       createDocument({
         id: 'doc',
@@ -248,11 +365,12 @@ describe('EditorRoot integrated interactions', () => {
     )
 
     try {
-      act(() => {
-        getBlockShell(rendered.container, 'block-a').dispatchEvent(
-          new MouseEvent('click', { bubbles: true }),
-        )
-      })
+      expect(queryBlockToolbar(rendered.container)).toBeNull()
+      clickBlock(rendered.container, 'block-a')
+      expect(queryBlockToolbar(rendered.container)).toBeNull()
+      selectActiveEditableBlockText(rendered.container)
+      expect(queryBlockToolbar(rendered.container)).not.toBeNull()
+
       act(() => {
         getButton(rendered.container, '[data-vetra-toolbar-item="heading-2"]').dispatchEvent(
           new MouseEvent('click', { bubbles: true }),
@@ -344,6 +462,115 @@ describe('EditorRoot integrated interactions', () => {
         type: 'heading',
         props: { level: 2 },
       })
+      expect(querySlashMenu(rendered.container)).toBeNull()
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('closes the slash menu on Backspace when the query is empty', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor')],
+      }),
+    )
+
+    try {
+      clickBlock(rendered.container, 'block-a')
+      pressEditorKey(rendered.container, '/')
+
+      const event = dispatchKeyDown(getSlashMenu(rendered.container), 'Backspace')
+
+      expect(event.defaultPrevented).toBe(true)
+      expect(querySlashMenu(rendered.container)).toBeNull()
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('does not open slash menu from custom editors or editor chrome controls', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [
+          paragraph('block-a', 'Anchor'),
+          customContentEditableBlock('custom-a', 'Downstream editor'),
+        ],
+      }),
+      textEditingTestBlocks,
+    )
+
+    try {
+      clickBlock(rendered.container, 'block-a')
+      selectActiveEditableBlockText(rendered.container)
+
+      const customSlash = dispatchKeyDown(getCustomContentEditable(rendered.container), '/')
+      const toolbarSlash = dispatchKeyDown(
+        getButton(rendered.container, '[data-vetra-toolbar-item="heading-2"]'),
+        '/',
+      )
+      const gutterSlash = dispatchKeyDown(
+        getButton(
+          rendered.container,
+          '[data-vetra-block-control-block-id="block-a"][data-vetra-block-control="insert-after"]',
+        ),
+        '/',
+      )
+
+      expect(customSlash.defaultPrevented).toBe(false)
+      expect(toolbarSlash.defaultPrevented).toBe(false)
+      expect(gutterSlash.defaultPrevented).toBe(false)
+      expect(querySlashMenu(rendered.container)).toBeNull()
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('does not let an open slash menu swallow custom contenteditable keys', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [
+          paragraph('block-a', 'Anchor'),
+          customContentEditableBlock('custom-a', 'Downstream editor'),
+        ],
+      }),
+      textEditingTestBlocks,
+    )
+
+    try {
+      clickBlock(rendered.container, 'block-a')
+      pressEditorKey(rendered.container, '/')
+
+      const backspaceEvent = dispatchKeyDown(
+        getCustomContentEditable(rendered.container),
+        'Backspace',
+      )
+      const printableEvent = dispatchKeyDown(getCustomContentEditable(rendered.container), 'x')
+
+      expect(backspaceEvent.defaultPrevented).toBe(false)
+      expect(printableEvent.defaultPrevented).toBe(false)
+      expect(querySlashMenu(rendered.container)).not.toBeNull()
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('does not open slash menu during composition', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor')],
+      }),
+    )
+
+    try {
+      clickBlock(rendered.container, 'block-a')
+
+      const event = dispatchKeyDown(getEditorRoot(rendered.container), '/', { isComposing: true })
+
+      expect(event.defaultPrevented).toBe(false)
       expect(querySlashMenu(rendered.container)).toBeNull()
     } finally {
       rendered.cleanup()
@@ -613,6 +840,55 @@ describe('EditorRoot integrated interactions', () => {
     }
   })
 
+  it('lets a single active rich text editor own Ctrl+A', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Editable text')],
+      }),
+    )
+
+    try {
+      clickBlock(rendered.container, 'block-a')
+
+      const event = dispatchKeyDown(getActiveEditableBlock(rendered.container), 'a', {
+        ctrlKey: true,
+      })
+
+      expect(event.defaultPrevented).toBe(false)
+      expectBlockShellState(rendered.container, 'block-a', { active: true, selected: true })
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('does not select all blocks from a downstream custom contenteditable target', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [
+          customContentEditableBlock('custom-a', 'Downstream editor'),
+          paragraph('block-b', 'Second block'),
+        ],
+      }),
+      textEditingTestBlocks,
+    )
+
+    try {
+      clickBlock(rendered.container, 'custom-a')
+
+      const event = dispatchKeyDown(getCustomContentEditable(rendered.container), 'a', {
+        ctrlKey: true,
+      })
+
+      expect(event.defaultPrevented).toBe(false)
+      expectBlockShellState(rendered.container, 'custom-a', { active: true, selected: true })
+      expectBlockShellState(rendered.container, 'block-b', { active: false, selected: false })
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
   it('selects all top-level blocks from an active rich text contenteditable target', () => {
     const rendered = renderEditor(
       createDocument({
@@ -718,6 +994,81 @@ describe('EditorRoot integrated interactions', () => {
       expectBlockShellState(rendered.container, 'block-a', { active: false, selected: true })
       expectBlockShellState(rendered.container, 'block-b', { active: false, selected: true })
       expectBlockShellState(rendered.container, 'block-c', { active: false, selected: true })
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('lets active textarea blocks own undo and Escape keys', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor'), codeTextareaBlock('code-a', 'let value = 1')],
+      }),
+      textEditingTestBlocks,
+    )
+
+    try {
+      act(() => {
+        getButton(
+          rendered.container,
+          '[data-vetra-block-control-block-id="block-a"][data-vetra-block-control="insert-after"]',
+        ).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+      expect(rendered.latestDocument.children.root).toHaveLength(3)
+
+      clickBlock(rendered.container, 'code-a')
+      const textarea = getCodeTextarea(rendered.container)
+      act(() => {
+        textarea.focus()
+      })
+
+      const undoEvent = dispatchKeyDown(textarea, 'z', { ctrlKey: true })
+      const escapeEvent = dispatchKeyDown(textarea, 'Escape')
+
+      expect(undoEvent.defaultPrevented).toBe(false)
+      expect(escapeEvent.defaultPrevented).toBe(false)
+      expect(rendered.latestDocument.children.root).toHaveLength(3)
+      expect(document.activeElement).toBe(textarea)
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('lets downstream custom contenteditable targets own clipboard events', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [
+          customContentEditableBlock('custom-a', 'Downstream editor'),
+          paragraph('block-b', 'Second block'),
+        ],
+      }),
+      textEditingTestBlocks,
+    )
+
+    try {
+      clickBlock(rendered.container, 'custom-a')
+      const customEditor = getCustomContentEditable(rendered.container)
+      const copyEvent = createClipboardEvent('copy')
+      const cutEvent = createClipboardEvent('cut')
+      const pasteEvent = createClipboardEvent('paste', { 'text/plain': 'External text' })
+
+      act(() => {
+        customEditor.dispatchEvent(copyEvent)
+      })
+      act(() => {
+        customEditor.dispatchEvent(cutEvent)
+      })
+      act(() => {
+        customEditor.dispatchEvent(pasteEvent)
+      })
+
+      expect(copyEvent.defaultPrevented).toBe(false)
+      expect(cutEvent.defaultPrevented).toBe(false)
+      expect(pasteEvent.defaultPrevented).toBe(false)
+      expect(rendered.latestDocument.children.root).toEqual(['custom-a', 'block-b'])
+      expect(rendered.latestDocument.blocks['custom-a']).toBeDefined()
     } finally {
       rendered.cleanup()
     }

@@ -38,14 +38,21 @@ test.describe('Vetra demo editor main editing path', () => {
     await expect(editorSurface(page)).toBeVisible()
   })
 
-  test('activates a block and converts it from the toolbar', async ({ page }) => {
+  test('shows the popup toolbar only after selecting text and converts the active block', async ({
+    page,
+  }) => {
     const blockId = 'intro-body'
     const before = await readSerializedDocument(page)
+    const toolbar = page.getByRole('toolbar', { name: 'Block toolbar' })
+
+    await expect(toolbar).toHaveCount(0)
 
     await activateBlock(page, blockId)
     await expect(activeInlineEditor(page)).toBeVisible()
+    await expect(toolbar).toHaveCount(0)
 
-    const toolbar = page.getByRole('toolbar', { name: 'Block toolbar' })
+    await selectActiveInlineEditorText(page)
+    await expect(toolbar).toBeVisible()
     await expect(toolbar.getByRole('button', { name: 'Paragraph' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -404,48 +411,43 @@ test.describe('Vetra demo editor main editing path', () => {
     expect(expectDefined(insertedBlocks[1]).id).toMatch(/^paste-/)
   })
 
-  test('duplicates and moves a selected block range from the toolbar', async ({ page }) => {
+  test('falls back to plain text when Vetra clipboard data is malformed', async ({ page }) => {
+    const anchorBlockId = 'sample-code'
     const before = await readSerializedDocument(page)
+    const beforeChildren = getRootChildren(before)
 
+    await activateBlock(page, anchorBlockId)
+    const pasted = await dispatchEditorClipboardEvent(page, 'paste', {
+      [VETRA_BLOCK_CLIPBOARD_MIME_TYPE]: '{not valid json',
+      'text/plain': 'Plain fallback after malformed Vetra payload',
+    })
+
+    expect(pasted.defaultPrevented).toBe(true)
+
+    const after = await waitForSerializedDocument(page, (serialized) => {
+      const insertedBlock = findBlockAfter(serialized, anchorBlockId)
+
+      return (
+        insertedBlock?.type === 'paragraph' &&
+        readBlockPlainText(insertedBlock) === 'Plain fallback after malformed Vetra payload'
+      )
+    })
+    const insertedBlock = expectDefined(findBlockAfter(after, anchorBlockId))
+
+    expect(after.document.version).toBeGreaterThan(before.document.version)
+    expect(getRootChildren(after)).toHaveLength(beforeChildren.length + 1)
+    expect(readBlockPlainText(insertedBlock)).toBe('Plain fallback after malformed Vetra payload')
+  })
+
+  test('does not show the text popup toolbar for a block range selection', async ({ page }) => {
     await activateBlock(page, 'intro-body')
     await blockShell(page, 'design-quote').click({ modifiers: ['Shift'] })
 
     const toolbar = page.getByRole('toolbar', { name: 'Block toolbar' })
-    await toolbar.getByRole('button', { name: 'Duplicate', exact: true }).click()
 
-    const afterDuplicate = await waitForSerializedDocument(page, (serialized) => {
-      const children = getRootChildren(serialized)
-
-      return (
-        children.includes('intro-body-copy') &&
-        children.includes('design-quote-copy') &&
-        children.indexOf('intro-body-copy') > children.indexOf('design-quote') &&
-        children.indexOf('design-quote-copy') === children.indexOf('intro-body-copy') + 1
-      )
-    })
-
-    expect(afterDuplicate.document.version).toBeGreaterThan(before.document.version)
-    expect(readBlockPlainText(expectBlock(afterDuplicate, 'intro-body-copy'))).toBe(
-      'A virtualized block editor runtime for large documents.',
-    )
-    await expect(blockShell(page, 'intro-body-copy')).toHaveAttribute('data-selected', 'true')
-    await expect(blockShell(page, 'design-quote-copy')).toHaveAttribute('data-selected', 'true')
-
-    await toolbar.getByRole('button', { name: 'Up', exact: true }).click()
-
-    const afterMove = await waitForSerializedDocument(page, (serialized) => {
-      const children = getRootChildren(serialized)
-
-      return (
-        children.indexOf('intro-body-copy') === children.indexOf('intro-body') + 1 &&
-        children.indexOf('design-quote-copy') === children.indexOf('intro-body-copy') + 1 &&
-        children.indexOf('design-quote') === children.indexOf('design-quote-copy') + 1
-      )
-    })
-
-    expect(afterMove.document.version).toBeGreaterThan(afterDuplicate.document.version)
-    await expect(blockShell(page, 'intro-body-copy')).toHaveAttribute('data-selected', 'true')
-    await expect(blockShell(page, 'design-quote-copy')).toHaveAttribute('data-selected', 'true')
+    await expect(blockShell(page, 'intro-body')).toHaveAttribute('data-selected', 'true')
+    await expect(blockShell(page, 'design-quote')).toHaveAttribute('data-selected', 'true')
+    await expect(toolbar).toHaveCount(0)
   })
 
   test('exports the current document as HTML from the exchange panel', async ({ page }) => {
@@ -674,6 +676,26 @@ async function setActiveInlineEditorCaret(page: Page, position: 'start' | 'end')
     selection.removeAllRanges()
     selection.addRange(range)
   }, position)
+  await expect(editor).toBeFocused()
+}
+
+async function selectActiveInlineEditorText(page: Page): Promise<void> {
+  const editor = activeInlineEditor(page)
+
+  await editor.evaluate((node) => {
+    node.focus()
+
+    const selection = window.getSelection()
+    if (selection === null) {
+      throw new Error('Expected browser selection to be available.')
+    }
+
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+  })
   await expect(editor).toBeFocused()
 }
 

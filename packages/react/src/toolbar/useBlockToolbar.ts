@@ -62,6 +62,7 @@ export interface BlockToolbarState {
   readonly activeBlock: DocBlock | undefined
   readonly activeTarget: BlockToolbarTarget | undefined
   readonly canConvert: boolean
+  readonly visible: boolean
   readonly selectedBlockIds: readonly BlockId[]
   readonly actionItems: readonly BlockToolbarActionItem[]
   readonly items: readonly BlockToolbarItem[]
@@ -86,6 +87,8 @@ export function useBlockToolbar(options: UseBlockToolbarOptions = {}): BlockTool
   )
   const canConvert =
     activeBlockState.block === undefined ? false : isConvertibleToolbarBlock(activeBlockState.block)
+  const visible =
+    activeBlockState.blockId !== undefined || selectionState.selectedBlockIds.length > 0
   const items = useMemo(
     () => getBlockToolbarItems(activeBlockState.block, targets),
     [activeBlockState.block, targets],
@@ -155,6 +158,7 @@ export function useBlockToolbar(options: UseBlockToolbarOptions = {}): BlockTool
     activeBlock: activeBlockState.block,
     activeTarget,
     canConvert,
+    visible,
     selectedBlockIds: selectionState.selectedBlockIds,
     actionItems,
     items,
