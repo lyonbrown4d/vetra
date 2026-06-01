@@ -71,6 +71,8 @@ test.describe('Vetra demo editor main editing path', () => {
     expect(readBlockPlainText(convertedBlock)).toBe(
       'A virtualized block editor runtime for large documents.',
     )
+    await expect(blockShell(page, blockId).locator('.vetra-block--heading-level-2')).toHaveCount(1)
+    await expect(activeInlineEditor(page)).toHaveCSS('font-size', '24px')
     await expect(toolbar.getByRole('button', { name: 'H2' })).toHaveAttribute(
       'aria-pressed',
       'true',

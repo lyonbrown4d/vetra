@@ -177,8 +177,9 @@ function RichTextActive(props: BlockRendererProps<BasicRichTextBlock>) {
 
   return (
     <div
-      className={`vetra-block vetra-block--active vetra-block--${props.block.type}`}
+      className={getRichTextActiveClassName(props.block)}
       data-block-id={props.block.id}
+      {...getRichTextActiveDataAttributes(props.block)}
       ref={activeBlockRootRef}
     >
       <LexicalBlockEditor
@@ -250,6 +251,22 @@ function RichTextActive(props: BlockRendererProps<BasicRichTextBlock>) {
       />
     </div>
   )
+}
+
+function getRichTextActiveClassName(block: BasicRichTextBlock): string {
+  const classNames = ['vetra-block', 'vetra-block--active', `vetra-block--${block.type}`]
+
+  if (block.type === 'heading') {
+    classNames.push(`vetra-block--heading-level-${String(block.props.level)}`)
+  }
+
+  return classNames.join(' ')
+}
+
+function getRichTextActiveDataAttributes(block: BasicRichTextBlock): {
+  readonly 'data-heading-level'?: HeadingBlock['props']['level']
+} {
+  return block.type === 'heading' ? { 'data-heading-level': block.props.level } : {}
 }
 
 function updateRichTextBlockContent(

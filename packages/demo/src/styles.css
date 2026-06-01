@@ -622,8 +622,44 @@ textarea:focus-visible,
 .vetra-block--heading h5,
 .vetra-block--heading h6 {
   margin: 0;
-  font-size: 28px;
   letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.vetra-block--heading h1,
+.vetra-block--heading-level-1 .vetra-inline-editor {
+  font-size: 30px;
+  font-weight: 760;
+}
+
+.vetra-block--heading h2,
+.vetra-block--heading-level-2 .vetra-inline-editor {
+  font-size: 24px;
+  font-weight: 730;
+}
+
+.vetra-block--heading h3,
+.vetra-block--heading-level-3 .vetra-inline-editor {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.vetra-block--heading h4,
+.vetra-block--heading-level-4 .vetra-inline-editor {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.vetra-block--heading h5,
+.vetra-block--heading-level-5 .vetra-inline-editor {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.vetra-block--heading h6,
+.vetra-block--heading-level-6 .vetra-inline-editor {
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .vetra-block--quote blockquote {

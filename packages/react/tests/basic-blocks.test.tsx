@@ -10,7 +10,7 @@ import {
   type EditorRuntime,
   type InlineContent,
 } from '@vetra/core'
-import { createCalloutBlock, createTodoBlock } from '@vetra/blocks-basic'
+import { createCalloutBlock, createHeadingBlock, createTodoBlock } from '@vetra/blocks-basic'
 import { basicBlocks } from '@vetra/blocks-basic/react'
 import { BlockRenderer, EditorProvider } from '@vetra/react'
 
@@ -112,6 +112,25 @@ describe('basic blocks renderer bindings', () => {
       expect(getInlineText(getActiveLexicalProps().value)).toBe('Editable callout')
     } finally {
       calloutRendered.cleanup()
+    }
+  })
+
+  it('marks active headings with their level for visual editing styles', () => {
+    const editor = createEditorWithBlocks([createHeadingBlock('heading-a', 2, 'Editable heading')])
+
+    selectBlock(editor, 'heading-a')
+    const rendered = renderBlock(editor, 'heading-a')
+
+    try {
+      const activeBlock = rendered.container.querySelector('.vetra-block--active')
+
+      expect(activeBlock?.classList.contains('vetra-block--heading')).toBe(true)
+      expect(activeBlock?.classList.contains('vetra-block--heading-level-2')).toBe(true)
+      expect(activeBlock?.getAttribute('data-heading-level')).toBe('2')
+      expect(getActiveLexicalProps().autoFocus).toBe(true)
+      expect(getInlineText(getActiveLexicalProps().value)).toBe('Editable heading')
+    } finally {
+      rendered.cleanup()
     }
   })
 })
