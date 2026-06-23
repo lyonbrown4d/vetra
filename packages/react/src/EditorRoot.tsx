@@ -146,7 +146,7 @@ function EditorSurface(props: EditorSurfaceProps) {
   const handlePointerDownCapture = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (slashMenuState === null) {
-        if (!isInlineEditorTarget(event.target)) {
+        if (!isInlineEditorTarget(event.target) && !isInlineToolbarTarget(event.target)) {
           setInlineToolbarPosition(null)
         }
 
@@ -767,6 +767,10 @@ function isInlineEditorTarget(target: EventTarget): boolean {
     target instanceof HTMLElement &&
     target.closest('.vetra-inline-editor[contenteditable="true"]') !== null
   )
+}
+
+function isInlineToolbarTarget(target: EventTarget): boolean {
+  return target instanceof HTMLElement && target.closest('[data-vetra-block-toolbar]') !== null
 }
 
 function isLexicalActiveEditorTarget(target: EventTarget): boolean {

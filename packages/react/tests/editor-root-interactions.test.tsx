@@ -373,6 +373,13 @@ describe('EditorRoot integrated interactions', () => {
 
       act(() => {
         getButton(rendered.container, '[data-vetra-toolbar-item="heading-2"]').dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, cancelable: true }),
+        )
+      })
+      expect(queryBlockToolbar(rendered.container)).not.toBeNull()
+
+      act(() => {
+        getButton(rendered.container, '[data-vetra-toolbar-item="heading-2"]').dispatchEvent(
           new MouseEvent('click', { bubbles: true }),
         )
       })
