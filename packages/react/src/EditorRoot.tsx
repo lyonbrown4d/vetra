@@ -13,6 +13,7 @@ import {
 import {
   createEditor,
   createEditorState,
+  getSelectionReferencedBlockIds,
   getSelectedBlockIds,
   normalizeSelection,
   type BlockId,
@@ -122,8 +123,8 @@ function EditorSurface(props: EditorSurfaceProps) {
   const inlineToolbarStyle = createInlineToolbarStyle(inlineToolbarPosition)
 
   const updateInlineToolbarPosition = useCallback(() => {
-    setInlineToolbarPosition(resolveInlineToolbarPosition(surfaceRef.current))
-  }, [])
+    setInlineToolbarPosition(resolveInlineToolbarPosition(editor, surfaceRef.current))
+  }, [editor])
 
   useEffect(() => {
     const ownerDocument = surfaceRef.current?.ownerDocument ?? globalThis.document
@@ -145,6 +146,10 @@ function EditorSurface(props: EditorSurfaceProps) {
   const handlePointerDownCapture = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (slashMenuState === null) {
+        if (!isInlineEditorTarget(event.target)) {
+          setInlineToolbarPosition(null)
+        }
+
         return
       }
 
@@ -536,29 +541,47 @@ function createInlineToolbarStyle(
   }
 }
 
-function resolveInlineToolbarPosition(root: HTMLElement | null): InlineToolbarPosition | null {
+function resolveInlineToolbarPosition(
+  editor: EditorRuntime,
+  root: HTMLElement | null,
+): InlineToolbarPosition | null {
   if (root === null) {
     return null
   }
 
+  const state = editor.getState()
+  const selection = normalizeSelection(state.document, state.selection)
+  const referencedBlockIds = getSelectionReferencedBlockIds(selection)
+
   const ownerDocument = root.ownerDocument
-  const selection = ownerDocument.getSelection()
+  const domSelection = ownerDocument.getSelection()
 
   if (
-    selection === null ||
-    selection.isCollapsed ||
-    selection.rangeCount === 0 ||
-    selection.toString().trim().length === 0
+    domSelection === null ||
+    domSelection.isCollapsed ||
+    domSelection.rangeCount === 0 ||
+    domSelection.toString().trim().length === 0
   ) {
     return null
   }
 
-  const inlineEditor = resolveInlineEditorSelectionTarget(root, selection)
+  const inlineEditor = resolveInlineEditorSelectionTarget(root, domSelection)
   if (inlineEditor === null) {
     return null
   }
 
-  const rect = readSelectionRect(selection.getRangeAt(0), inlineEditor)
+  const inlineEditorBlockId = inlineEditor
+    .closest('[data-vetra-block-shell]')
+    ?.getAttribute('data-vetra-block-shell')
+  if (inlineEditorBlockId === null || inlineEditorBlockId === undefined) {
+    return null
+  }
+
+  if (referencedBlockIds.length > 0 && !referencedBlockIds.includes(inlineEditorBlockId)) {
+    return null
+  }
+
+  const rect = readSelectionRect(domSelection.getRangeAt(0), inlineEditor)
   if (rect === null) {
     return null
   }
@@ -739,6 +762,13 @@ function isTextInputElement(target: EventTarget): boolean {
   return target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement
 }
 
+function isInlineEditorTarget(target: EventTarget): boolean {
+  return (
+    target instanceof HTMLElement &&
+    target.closest('.vetra-inline-editor[contenteditable="true"]') !== null
+  )
+}
+
 function isLexicalActiveEditorTarget(target: EventTarget): boolean {
   return (
     target instanceof HTMLElement &&
@@ -876,13 +906,13 @@ function resolveSlashMenuSelectionAnchor(root: HTMLElement | null): HTMLElement 
     return null
   }
 
-  const selection = ownerDocument.getSelection()
-  if (selection === null || selection.rangeCount === 0) {
+  const domSelection = ownerDocument.getSelection()
+  if (domSelection === null || domSelection.rangeCount === 0) {
     return null
   }
 
-  const anchorNode = selection.anchorNode
-  const focusNode = selection.focusNode
+  const anchorNode = domSelection.anchorNode
+  const focusNode = domSelection.focusNode
   const anchorElement = getSelectionElement(anchorNode)
   const focusElement = getSelectionElement(focusNode)
   const anchorEditor = anchorElement?.closest(

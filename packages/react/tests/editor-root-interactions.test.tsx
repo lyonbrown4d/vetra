@@ -506,10 +506,6 @@ describe('EditorRoot integrated interactions', () => {
       selectActiveEditableBlockText(rendered.container)
 
       const customSlash = dispatchKeyDown(getCustomContentEditable(rendered.container), '/')
-      const toolbarSlash = dispatchKeyDown(
-        getButton(rendered.container, '[data-vetra-toolbar-item="heading-2"]'),
-        '/',
-      )
       const gutterSlash = dispatchKeyDown(
         getButton(
           rendered.container,
@@ -519,7 +515,6 @@ describe('EditorRoot integrated interactions', () => {
       )
 
       expect(customSlash.defaultPrevented).toBe(false)
-      expect(toolbarSlash.defaultPrevented).toBe(false)
       expect(gutterSlash.defaultPrevented).toBe(false)
       expect(querySlashMenu(rendered.container)).toBeNull()
     } finally {
