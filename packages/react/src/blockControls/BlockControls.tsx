@@ -3,6 +3,7 @@ import { GripVertical, Plus } from 'lucide-react'
 import {
   createEmptyInlineContent,
   type BlockId,
+  type DocumentSelection,
   type EditorRuntime,
   type ParagraphBlock,
 } from '@vetra/core'
@@ -41,7 +42,7 @@ export const BlockControls = memo(function BlockControls(props: BlockControlsPro
 
       const selectionResult = editor.dispatch({
         type: 'setSelection',
-        selection: { type: 'block', blockId: block.id },
+        selection: createCollapsedTextSelection(block.id, 0),
       })
 
       if (selectionResult.ok) {
@@ -99,6 +100,17 @@ function createEmptyParagraphBlock(editor: EditorRuntime): ParagraphBlock {
     id: createAvailableBlockId(editor, 'gutter-paragraph'),
     type: 'paragraph',
     content: createEmptyInlineContent(),
+  }
+}
+
+function createCollapsedTextSelection(blockId: BlockId, offset: number): DocumentSelection {
+  const point = { path: [], offset }
+
+  return {
+    type: 'text',
+    blockId,
+    anchor: point,
+    focus: point,
   }
 }
 

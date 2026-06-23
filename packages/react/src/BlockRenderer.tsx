@@ -1,5 +1,6 @@
 import { useCallback, type KeyboardEvent, type MouseEvent } from 'react'
-import type { BlockId, DocBlock } from '@vetra/core'
+import { getInlineContentTextLength } from '@vetra/core'
+import type { BlockId, DocBlock, DocumentSelection, InlineContent } from '@vetra/core'
 import { BlockControls } from '@vetra/react/blockControls/BlockControls'
 import { useEditor } from '@vetra/react/context/EditorContext'
 import { useBlockRegistry } from '@vetra/react/EditorProvider'
@@ -34,9 +35,20 @@ export function BlockRenderer(props: BlockRendererRootProps) {
         }
       }
 
+      const selection = createPointerTextSelection(event, block)
+      if (selection !== undefined) {
+        const result = editor.dispatch({
+          type: 'setSelection',
+          selection,
+        })
+        if (result.ok) {
+          return
+        }
+      }
+
       blockLifecycle.selectBlock()
     },
-    [blockLifecycle, editor, props.blockId],
+    [block, blockLifecycle, editor, props.blockId],
   )
 
   const handleKeyDown = useCallback(
@@ -93,6 +105,131 @@ export function BlockRenderer(props: BlockRendererRootProps) {
 
 function isShiftSelectionClick(event: MouseEvent<HTMLDivElement>): boolean {
   return event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
+}
+
+function createPointerTextSelection(
+  event: MouseEvent<HTMLDivElement>,
+  block: DocBlock | undefined,
+): DocumentSelection | undefined {
+  if (block === undefined || !isInlineContent(block.content)) {
+    return undefined
+  }
+
+  const textOffset = readTextOffsetFromPoint(event.currentTarget, event.clientX, event.clientY)
+  if (textOffset === undefined) {
+    return undefined
+  }
+
+  const textLength = getInlineContentTextLength(block.content)
+  const point = {
+    path: [],
+    offset: clampNumber(textOffset, 0, textLength),
+  }
+
+  return {
+    type: 'text',
+    blockId: block.id,
+    anchor: point,
+    focus: point,
+  }
+}
+
+function readTextOffsetFromPoint(root: HTMLElement, x: number, y: number): number | undefined {
+  const caretPoint = readCaretPointFromCoordinates(root.ownerDocument, x, y)
+  if (caretPoint === undefined || !root.contains(caretPoint.node)) {
+    return undefined
+  }
+
+  return readTextOffsetBeforeDomPoint(root, caretPoint.node, caretPoint.offset)
+}
+
+interface CaretPoint {
+  readonly node: Node
+  readonly offset: number
+}
+
+function readCaretPointFromCoordinates(
+  document: Document,
+  x: number,
+  y: number,
+): CaretPoint | undefined {
+  const caretPositionFromPoint = Reflect.get(document, 'caretPositionFromPoint')
+  if (typeof caretPositionFromPoint === 'function') {
+    const caretPosition = (caretPositionFromPoint as CaretPositionFromPoint).call(document, x, y)
+
+    if (isCaretPositionLike(caretPosition)) {
+      return {
+        node: caretPosition.offsetNode,
+        offset: caretPosition.offset,
+      }
+    }
+  }
+
+  const caretRangeFromPoint = Reflect.get(document, 'caretRangeFromPoint')
+  if (typeof caretRangeFromPoint !== 'function') {
+    return undefined
+  }
+
+  const caretRange = caretRangeFromPoint.call(document, x, y)
+  if (caretRange instanceof Range) {
+    return {
+      node: caretRange.startContainer,
+      offset: caretRange.startOffset,
+    }
+  }
+
+  return undefined
+}
+
+type CaretPositionFromPoint = (this: Document, x: number, y: number) => CaretPositionLike | null
+
+interface CaretPositionLike {
+  readonly offsetNode: Node
+  readonly offset: number
+}
+
+function isCaretPositionLike(value: unknown): value is CaretPositionLike {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'offsetNode' in value &&
+    value.offsetNode instanceof Node &&
+    'offset' in value &&
+    typeof value.offset === 'number'
+  )
+}
+
+function readTextOffsetBeforeDomPoint(
+  root: HTMLElement,
+  node: Node,
+  offset: number,
+): number | undefined {
+  const range = root.ownerDocument.createRange()
+
+  try {
+    range.selectNodeContents(root)
+    range.setEnd(node, offset)
+  } catch {
+    return undefined
+  }
+
+  return range.toString().length
+}
+
+function isInlineContent(value: unknown): value is InlineContent {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    'type' in value &&
+    value.type === 'inline-content' &&
+    'children' in value &&
+    Array.isArray(value.children)
+  )
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }
 
 export interface UnknownBlockFallbackProps {

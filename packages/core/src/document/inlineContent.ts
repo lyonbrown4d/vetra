@@ -50,3 +50,19 @@ export function createTextInlineContent(text: string): InlineContent {
     children: [{ type: 'text', text }],
   }
 }
+
+export function getInlineContentTextLength(content: InlineContent): number {
+  return content.children.reduce((length, node) => length + getInlineNodeTextLength(node), 0)
+}
+
+export function getInlineNodeTextLength(node: InlineNode): number {
+  switch (node.type) {
+    case 'text':
+    case 'inline-code':
+      return node.text.length
+    case 'mention':
+      return node.label.length
+    case 'link':
+      return node.children.reduce((length, child) => length + getInlineNodeTextLength(child), 0)
+  }
+}

@@ -889,7 +889,7 @@ describe('EditorRoot integrated interactions', () => {
     }
   })
 
-  it('selects all top-level blocks from an active rich text contenteditable target', () => {
+  it('lets an active rich text contenteditable target own Ctrl+A in multi-block documents', () => {
     const rendered = renderEditor(
       createDocument({
         id: 'doc',
@@ -920,38 +920,11 @@ describe('EditorRoot integrated interactions', () => {
         dispatchResult = getActiveEditableBlock(rendered.container).dispatchEvent(event)
       })
 
-      expect(dispatchResult).toBe(false)
-      expect(event.defaultPrevented).toBe(true)
-      expectBlockShellState(rendered.container, 'block-a', { active: false, selected: true })
-      expectBlockShellState(rendered.container, 'block-b', { active: false, selected: true })
-      expectBlockShellState(rendered.container, 'block-c', { active: false, selected: true })
-
-      act(() => {
-        getEditorRoot(rendered.container).dispatchEvent(
-          new KeyboardEvent('keydown', {
-            bubbles: true,
-            cancelable: true,
-            key: 'Delete',
-          }),
-        )
-      })
-
-      expect(rendered.latestDocument.children.root).toEqual([])
-      expect(rendered.latestDocument.blocks['block-a']).toBeUndefined()
-      expect(rendered.latestDocument.blocks['block-b']).toBeUndefined()
-      expect(rendered.latestDocument.blocks['block-c']).toBeUndefined()
-
-      act(() => {
-        getEditorRoot(rendered.container).dispatchEvent(
-          new KeyboardEvent('keydown', {
-            bubbles: true,
-            cancelable: true,
-            ctrlKey: true,
-            key: 'z',
-          }),
-        )
-      })
-
+      expect(dispatchResult).toBe(true)
+      expect(event.defaultPrevented).toBe(false)
+      expectBlockShellState(rendered.container, 'block-a', { active: true, selected: true })
+      expectBlockShellState(rendered.container, 'block-b', { active: false, selected: false })
+      expectBlockShellState(rendered.container, 'block-c', { active: false, selected: false })
       expect(rendered.latestDocument.children.root).toEqual(['block-a', 'block-b', 'block-c'])
       expect(rendered.latestDocument.blocks['block-a']).toBeDefined()
       expect(rendered.latestDocument.blocks['block-b']).toBeDefined()

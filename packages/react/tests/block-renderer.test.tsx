@@ -207,7 +207,9 @@ describe('BlockRenderer active lifecycle', () => {
           children: [],
         },
       })
-      expect(state.selection).toEqual({ type: 'block', blockId: insertedBlockId })
+      expect(state.selection).toEqual(
+        createCollapsedTextSelection(expectDefined(insertedBlockId), 0),
+      )
     } finally {
       rendered.cleanup()
     }
@@ -242,6 +244,17 @@ function readParagraphText(block: ParagraphBlock): string {
   const firstNode = block.content.children[0]
 
   return firstNode?.type === 'text' ? firstNode.text : ''
+}
+
+function createCollapsedTextSelection(blockId: string, offset: number) {
+  const point = { path: [], offset }
+
+  return {
+    type: 'text',
+    blockId,
+    anchor: point,
+    focus: point,
+  }
 }
 
 function expectDefined<TValue>(value: TValue | undefined): TValue {

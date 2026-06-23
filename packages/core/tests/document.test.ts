@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   createTextInlineContent,
+  getInlineContentTextLength,
   normalizeDocument,
   validateDocument,
   type DocBlock,
   type DocumentState,
+  type InlineContent,
   type ParagraphBlock,
 } from '@vetra/core'
 
@@ -149,5 +151,22 @@ describe('document normalization', () => {
         'attachedOrphanBlock',
       ]),
     )
+  })
+})
+
+describe('inline content helpers', () => {
+  it('counts user-visible text across marks, links, mentions, and inline code', () => {
+    const content: InlineContent = {
+      type: 'inline-content',
+      version: 1,
+      children: [
+        { type: 'text', text: 'Hi ', marks: ['bold'] },
+        { type: 'link', href: 'https://example.test', children: [{ type: 'text', text: 'Ada' }] },
+        { type: 'mention', id: 'u1', label: '@Lin' },
+        { type: 'inline-code', text: 'x()' },
+      ],
+    }
+
+    expect(getInlineContentTextLength(content)).toBe('Hi Ada@Linx()'.length)
   })
 })

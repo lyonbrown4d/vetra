@@ -97,7 +97,7 @@ describe('basic rich text active renderer bridge', () => {
       expect(readBlockText(editor, 'block-a')).toBe('Hello')
       expect(afterBlockId).toBeDefined()
       expect(readBlockText(editor, expectDefined(afterBlockId))).toBe('World')
-      expect(state.selection).toEqual({ type: 'block', blockId: afterBlockId })
+      expect(state.selection).toEqual(createCollapsedTextSelection(expectDefined(afterBlockId), 0))
     } finally {
       rendered.cleanup()
     }
@@ -167,7 +167,7 @@ describe('basic rich text active renderer bridge', () => {
       expect(rootChildren).toEqual(['block-a'])
       expect(readBlockText(editor, 'block-a')).toBe('HelloWorld')
       expect(state.document.blocks['block-b']).toBeUndefined()
-      expect(state.selection).toEqual({ type: 'block', blockId: 'block-a' })
+      expect(state.selection).toEqual(createCollapsedTextSelection('block-a', 5))
     } finally {
       rendered.cleanup()
     }
@@ -300,6 +300,17 @@ function getActiveLexicalProps(): MockLexicalBlockEditorProps {
 
 function inlineText(text: string): InlineContent {
   return createTextInlineContent(text)
+}
+
+function createCollapsedTextSelection(blockId: string, offset: number) {
+  const point = { path: [], offset }
+
+  return {
+    type: 'text',
+    blockId,
+    anchor: point,
+    focus: point,
+  }
 }
 
 function readBlockText(editor: EditorRuntime, blockId: string): string {

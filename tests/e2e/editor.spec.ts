@@ -302,6 +302,22 @@ test.describe('Vetra demo editor main editing path', () => {
     })
   })
 
+  test('places the caret at the clicked readonly text offset before typing', async ({ page }) => {
+    const blockId = 'intro-body'
+
+    await clickReadonlyTextOffset(page, blockId, 1)
+    await expect(activeInlineEditor(page)).toBeFocused()
+    await page.keyboard.type(' fast')
+
+    const after = await waitForSerializedDocument(page, (serialized) => {
+      return readBlockPlainText(expectBlock(serialized, blockId)).startsWith('A fast virtualized')
+    })
+
+    expect(readBlockPlainText(expectBlock(after, blockId))).toBe(
+      'A fast virtualized block editor runtime for large documents.',
+    )
+  })
+
   test('pastes plain text into multiple blocks and updates the serialized document', async ({
     page,
   }) => {
@@ -574,6 +590,13 @@ test.describe('Vetra demo editor main editing path', () => {
     await expect(activeInlineEditor(page)).toBeFocused()
     await activeInlineEditor(page).press('ControlOrMeta+A')
 
+    await expect(activeInlineEditor(page)).toBeVisible()
+    expect(await readBrowserSelectionText(page)).toBe(
+      'A virtualized block editor runtime for large documents.',
+    )
+
+    await activeInlineEditor(page).press('ControlOrMeta+A')
+
     for (const selectedBlockId of ['intro-title', 'intro-body', 'design-quote', 'sample-code']) {
       await expect(blockShell(page, selectedBlockId)).toHaveAttribute('data-selected', 'true')
     }
@@ -730,6 +753,67 @@ async function selectActiveInlineEditorText(page: Page): Promise<void> {
     document.dispatchEvent(new Event('selectionchange'))
   })
   await expect(editor).toBeFocused()
+}
+
+async function clickReadonlyTextOffset(
+  page: Page,
+  blockId: string,
+  textOffset: number,
+): Promise<void> {
+  const point = await blockShell(page, blockId).evaluate((node, offset) => {
+    const readTextNodePoint = (
+      textNode: Text,
+      pointOffset: number,
+    ): { readonly x: number; readonly y: number } => {
+      const range = document.createRange()
+      const safeOffset = Math.min(Math.max(pointOffset, 0), textNode.length)
+      const measuredStartOffset = Math.max(0, Math.min(safeOffset, textNode.length - 1))
+
+      range.setStart(textNode, measuredStartOffset)
+      range.setEnd(textNode, Math.min(measuredStartOffset + 1, textNode.length))
+
+      const rect = range.getBoundingClientRect()
+
+      return {
+        x: rect.left + 1,
+        y: rect.top + rect.height / 2,
+      }
+    }
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+    let remainingOffset = offset
+    let fallbackTextNode: Text | undefined
+
+    while (walker.nextNode()) {
+      const textNode = walker.currentNode
+      if (!(textNode instanceof Text)) {
+        continue
+      }
+
+      const text = textNode.data
+      if (text.length === 0) {
+        continue
+      }
+
+      fallbackTextNode = textNode
+      if (remainingOffset <= text.length) {
+        return readTextNodePoint(textNode, remainingOffset)
+      }
+
+      remainingOffset -= text.length
+    }
+
+    if (fallbackTextNode !== undefined) {
+      return readTextNodePoint(fallbackTextNode, fallbackTextNode.length)
+    }
+
+    throw new Error('Expected readonly block to contain a text node.')
+  }, textOffset)
+
+  await page.mouse.click(point.x, point.y)
+}
+
+async function readBrowserSelectionText(page: Page): Promise<string> {
+  return page.evaluate(() => window.getSelection()?.toString() ?? '')
 }
 
 async function pastePlainText(page: Page, text: string): Promise<void> {

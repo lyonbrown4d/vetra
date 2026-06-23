@@ -16,6 +16,7 @@ import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin'
 import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
 import {
   $createParagraphNode,
+  $createRangeSelection,
   $createTextNode,
   $getSelection,
   $getRoot,
@@ -23,14 +24,17 @@ import {
   $isLineBreakNode,
   $isRangeSelection,
   $isTextNode,
+  $setSelection,
   COMMAND_PRIORITY_HIGH,
   type EditorState,
   type LexicalNode,
   type PointType,
+  type TextNode,
   KEY_BACKSPACE_COMMAND,
+  KEY_DOWN_COMMAND,
   KEY_ENTER_COMMAND,
 } from 'lexical'
-import type { InlineContent } from '@vetra/core'
+import { getInlineContentTextLength, type InlineContent } from '@vetra/core'
 import {
   createMergeBlockBackwardIntent,
   createSplitBlockIntent,
@@ -63,6 +67,7 @@ export interface LexicalBlockEditorProps {
   readonly placeholder?: string
   readonly className?: string
   readonly autoFocus?: boolean
+  readonly initialTextOffset?: number
   readonly onCompositionChange?: (state: LexicalBlockEditorCompositionState) => void
   readonly onCommit?: (commit: LexicalBlockContentCommit) => void
   readonly onChange: (nextValue: InlineContent) => void
@@ -145,15 +150,6 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
       return
     }
 
-    if (!isComposing && isSelectAllShortcut(event) && callbacks.onSelectAll !== undefined) {
-      const handled = callbacks.onSelectAll()
-      if (handled !== false) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
-      return
-    }
-
     if (isStructuralKey(event.key) && !canRunStructuralKeyCommand({ isComposing })) {
       event.stopPropagation()
     }
@@ -176,11 +172,15 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
           throw error
         },
         editorState() {
-          writeInlineContentToLexicalRoot(props.value)
+          writeInlineContentToLexicalRoot(props.value, props.initialTextOffset)
         },
       }}
     >
-      <ExternalValueSyncPlugin value={props.value} latestValueRef={latestValueRef} />
+      <ExternalValueSyncPlugin
+        initialTextOffset={props.initialTextOffset}
+        latestValueRef={latestValueRef}
+        value={props.value}
+      />
       <PlainTextPlugin
         contentEditable={
           <ContentEditable
@@ -226,6 +226,7 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
 }
 
 function ExternalValueSyncPlugin(props: {
+  readonly initialTextOffset: number | undefined
   readonly value: InlineContent
   readonly latestValueRef: RefObject<InlineContent>
 }) {
@@ -239,14 +240,17 @@ function ExternalValueSyncPlugin(props: {
     props.latestValueRef.current = props.value
     editor.update(
       () => {
-        writeInlineContentToLexicalRoot(props.value)
+        writeInlineContentToLexicalRoot(
+          props.value,
+          readCollapsedSelectionTextOffset() ?? props.initialTextOffset,
+        )
       },
       {
         discrete: true,
         tag: EXTERNAL_VALUE_SYNC_UPDATE_TAG,
       },
     )
-  }, [editor, props.latestValueRef, props.value])
+  }, [editor, props.initialTextOffset, props.latestValueRef, props.value])
 
   return null
 }
@@ -259,6 +263,30 @@ function StructuralCommandBridgePlugin(props: {
   const [editor] = useLexicalComposerContext()
 
   useEffect(() => {
+    const unregisterKeyDown = editor.registerCommand(
+      KEY_DOWN_COMMAND,
+      (event) => {
+        const callbacks = props.bridgeCallbacksRef.current
+
+        if (
+          readCompositionState(props.compositionStateRef, event).isComposing ||
+          !isSelectAllShortcut(event) ||
+          callbacks.onSelectAll === undefined ||
+          !isEntireInlineContentSelected()
+        ) {
+          return false
+        }
+
+        const handled = callbacks.onSelectAll()
+        if (handled === false) {
+          return false
+        }
+
+        event.preventDefault()
+        return true
+      },
+      COMMAND_PRIORITY_HIGH,
+    )
     const unregisterEnter = editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event) => {
@@ -327,6 +355,7 @@ function StructuralCommandBridgePlugin(props: {
     )
 
     return () => {
+      unregisterKeyDown()
       unregisterEnter()
       unregisterBackspace()
     }
@@ -408,20 +437,58 @@ function dispatchStructuralIntent(
   return dispatchLexicalBlockStructuralIntent(intent, callbacks)
 }
 
-function writeInlineContentToLexicalRoot(content: InlineContent): void {
+function writeInlineContentToLexicalRoot(content: InlineContent, textOffset?: number): void {
   const adapterState = inlineContentToLexicalAdapterState(content)
   const root = $getRoot()
   const paragraph = $createParagraphNode()
+  const textNodes: TextNode[] = []
 
   root.clear()
   for (const textNode of adapterState.root.children[0]?.children ?? []) {
-    paragraph.append(createLexicalTextNode(textNode))
+    const lexicalTextNode = createLexicalTextNode(textNode)
+    textNodes.push(lexicalTextNode)
+    paragraph.append(lexicalTextNode)
   }
   root.append(paragraph)
+
+  if (textOffset !== undefined) {
+    selectTextOffsetInLexicalParagraph(paragraph, textNodes, textOffset)
+  }
 }
 
-function createLexicalTextNode(node: LexicalAdapterTextNode) {
+function createLexicalTextNode(node: LexicalAdapterTextNode): TextNode {
   return $createTextNode(node.text).setFormat(node.format)
+}
+
+function selectTextOffsetInLexicalParagraph(
+  paragraph: LexicalNode,
+  textNodes: readonly TextNode[],
+  textOffset: number,
+): void {
+  if (textNodes.length === 0) {
+    paragraph.selectStart()
+    return
+  }
+
+  const totalTextLength = textNodes.reduce((length, node) => length + node.getTextContentSize(), 0)
+  let remainingOffset = clampNumber(textOffset, 0, totalTextLength)
+  let lastTextNode: TextNode | undefined
+
+  for (const textNode of textNodes) {
+    const nodeLength = textNode.getTextContentSize()
+    lastTextNode = textNode
+
+    if (remainingOffset <= nodeLength) {
+      const selection = $createRangeSelection()
+      selection.setTextNodeRange(textNode, remainingOffset, textNode, remainingOffset)
+      $setSelection(selection)
+      return
+    }
+
+    remainingOffset -= nodeLength
+  }
+
+  lastTextNode?.selectEnd()
 }
 
 function readInlineContentBoundaryFromLexicalSelection(): LexicalInlineContentBoundary | undefined {
@@ -442,6 +509,40 @@ function readInlineContentBoundaryFromLexicalSelection(): LexicalInlineContentBo
     isCollapsed: selection.isCollapsed(),
     textOffset: getTextOffsetBeforePoint(points[0]),
   }
+}
+
+function readCollapsedSelectionTextOffset(): number | undefined {
+  const selection = $getSelection()
+
+  if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
+    return undefined
+  }
+
+  const points = selection.getStartEndPoints()
+
+  return points === null ? undefined : getTextOffsetBeforePoint(points[0])
+}
+
+function isEntireInlineContentSelected(): boolean {
+  const selection = $getSelection()
+
+  if (!$isRangeSelection(selection) || selection.isCollapsed()) {
+    return false
+  }
+
+  const points = selection.getStartEndPoints()
+
+  if (points === null) {
+    return false
+  }
+
+  const anchorOffset = getTextOffsetBeforePoint(points[0])
+  const focusOffset = getTextOffsetBeforePoint(points[1])
+  const startOffset = Math.min(anchorOffset, focusOffset)
+  const endOffset = Math.max(anchorOffset, focusOffset)
+  const contentLength = getInlineContentTextLength(readInlineContentFromLexicalRoot())
+
+  return startOffset <= 0 && endOffset >= contentLength
 }
 
 function getTextOffsetBeforePoint(point: PointType): number {
@@ -533,4 +634,8 @@ function collectTextNodes(node: LexicalNode, textNodes: LexicalAdapterTextNode[]
   for (const child of node.getChildren()) {
     collectTextNodes(child, textNodes)
   }
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }

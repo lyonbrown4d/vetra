@@ -8,6 +8,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
   type PointerEvent,
+  type FocusEvent,
 } from 'react'
 import {
   createEditor,
@@ -174,7 +175,7 @@ function EditorSurface(props: EditorSurfaceProps) {
         !isComposingKeyEvent(event) &&
         slashMenuState === null &&
         isSelectAllBlocksShortcut(event) &&
-        shouldHandleSelectAllBlocksShortcut(editor, event.target)
+        shouldHandleSelectAllBlocksShortcut(event.target)
       ) {
         event.preventDefault()
         event.stopPropagation()
@@ -234,7 +235,7 @@ function EditorSurface(props: EditorSurfaceProps) {
       }
 
       if (isSelectAllBlocksShortcut(event)) {
-        if (!shouldHandleSelectAllBlocksShortcut(editor, event.target)) {
+        if (!shouldHandleSelectAllBlocksShortcut(event.target)) {
           return
         }
 
@@ -253,7 +254,11 @@ function EditorSurface(props: EditorSurfaceProps) {
         if (activeBlockId !== undefined) {
           event.preventDefault()
           const blockShell = getBlockShell(surfaceRef.current, activeBlockId)
-          const anchorElement = resolveSlashMenuTargetAnchor(blockShell, event.target)
+          const anchorElement = resolveSlashMenuTargetAnchor(
+            blockShell,
+            event.target,
+            surfaceRef.current,
+          )
 
           setSlashMenuState({
             anchorElement,
@@ -354,6 +359,13 @@ function EditorSurface(props: EditorSurfaceProps) {
     [closeSlashMenu, editor, slashMenuState],
   )
 
+  const handleFocusOut = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    const nextFocusedElement = event.relatedTarget
+
+    if (nextFocusedElement === null || !event.currentTarget.contains(nextFocusedElement)) {
+      setInlineToolbarPosition(null)
+    }
+  }, [])
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
       const activeBlockId = getActiveBlockId(editor)
@@ -478,6 +490,7 @@ function EditorSurface(props: EditorSurfaceProps) {
       onCopy={handleCopy}
       onCut={handleCut}
       onPaste={handlePaste}
+      onBlurCapture={handleFocusOut}
       ref={surfaceRef}
     >
       <BlockToolbar
@@ -528,7 +541,9 @@ function resolveInlineToolbarPosition(root: HTMLElement | null): InlineToolbarPo
     return null
   }
 
-  const selection = root.ownerDocument.getSelection()
+  const ownerDocument = root.ownerDocument
+  const selection = ownerDocument.getSelection()
+
   if (
     selection === null ||
     selection.isCollapsed ||
@@ -765,13 +780,13 @@ function isSelectAllBlocksShortcut(event: KeyboardEvent<HTMLElement>): boolean {
   return hasPrimaryShortcutModifier(event) && !event.shiftKey && event.key.toLowerCase() === 'a'
 }
 
-function shouldHandleSelectAllBlocksShortcut(editor: EditorRuntime, target: EventTarget): boolean {
+function shouldHandleSelectAllBlocksShortcut(target: EventTarget): boolean {
   if (isTextInputElement(target) || isEditorChromeControlTarget(target)) {
     return false
   }
 
   if (isLexicalActiveEditorTarget(target)) {
-    return hasMultipleTopLevelBlocks(editor)
+    return false
   }
 
   return !isTextEditingElement(target)
@@ -787,13 +802,6 @@ function shouldOpenSlashMenu(target: EventTarget): boolean {
   }
 
   return !isTextEditingElement(target)
-}
-
-function hasMultipleTopLevelBlocks(editor: EditorRuntime): boolean {
-  const state = editor.getState()
-  const rootBlocks = state.document.children[state.document.rootId] ?? []
-
-  return rootBlocks.length > 1
 }
 
 function isComposingKeyEvent(event: KeyboardEvent<HTMLElement>): boolean {
@@ -834,7 +842,13 @@ function isNodeTarget(target: EventTarget): target is Node {
 function resolveSlashMenuTargetAnchor(
   blockShell: HTMLElement | undefined,
   target: EventTarget,
+  root: HTMLElement | null,
 ): HTMLElement | null {
+  const selectionAnchorElement = resolveSlashMenuSelectionAnchor(root)
+  if (selectionAnchorElement !== null) {
+    return selectionAnchorElement
+  }
+
   if (target instanceof HTMLElement) {
     const inlineTarget = target.closest('.vetra-inline-editor[contenteditable="true"]')
     if (inlineTarget !== null && inlineTarget instanceof HTMLElement) {
@@ -856,6 +870,47 @@ function resolveSlashMenuTargetAnchor(
   return null
 }
 
+function resolveSlashMenuSelectionAnchor(root: HTMLElement | null): HTMLElement | null {
+  const ownerDocument = root === null ? null : root.ownerDocument
+  if (root === null || ownerDocument === null) {
+    return null
+  }
+
+  const selection = ownerDocument.getSelection()
+  if (selection === null || selection.rangeCount === 0) {
+    return null
+  }
+
+  const anchorNode = selection.anchorNode
+  const focusNode = selection.focusNode
+  const anchorElement = getSelectionElement(anchorNode)
+  const focusElement = getSelectionElement(focusNode)
+  const anchorEditor = anchorElement?.closest(
+    '.vetra-inline-editor[contenteditable="true"]',
+  ) as HTMLElement | null
+  const focusEditor = focusElement?.closest(
+    '.vetra-inline-editor[contenteditable="true"]',
+  ) as HTMLElement | null
+
+  if (
+    anchorEditor === null ||
+    focusEditor === null ||
+    anchorEditor !== focusEditor ||
+    !root.contains(anchorEditor)
+  ) {
+    return null
+  }
+
+  if (anchorElement !== null && anchorElement !== anchorEditor) {
+    return anchorElement
+  }
+
+  if (focusElement !== null && focusElement !== anchorEditor) {
+    return focusElement
+  }
+
+  return anchorEditor
+}
 function resolveSlashMenuAnchor(
   root: HTMLElement | null,
   state: SlashMenuState,

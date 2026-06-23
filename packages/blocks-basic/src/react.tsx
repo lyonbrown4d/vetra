@@ -4,6 +4,7 @@ import { defineReactBlock, type AnyReactBlockPlugin, type BlockRendererProps } f
 import type {
   DividerBlock,
   DocBlock,
+  DocumentSelection,
   DocumentState,
   HeadingBlock,
   InlineContent,
@@ -13,7 +14,12 @@ import type {
   QuoteBlock,
   EditorRuntime,
 } from '@vetra/core'
-import { createEmptyInlineContent, findParentId, getBlockChildren } from '@vetra/core'
+import {
+  createEmptyInlineContent,
+  findParentId,
+  getBlockChildren,
+  getInlineContentTextLength,
+} from '@vetra/core'
 import { focusBlockShellAfterRender } from '@vetra/react/focus'
 import { selectAllTopLevelBlocks } from '@vetra/react/selection'
 import {
@@ -138,6 +144,11 @@ function RichTextActive(props: BlockRendererProps<BasicRichTextBlock>) {
     : createEmptyInlineContent()
   const activeBlockRootRef = useRef<HTMLDivElement | null>(null)
   const ignoreContentUpdatesAfterStructuralIntentRef = useRef(false)
+  const initialTextOffset = resolveInitialTextOffset(
+    props.editor.getState().selection,
+    props.block.id,
+    value,
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -201,6 +212,7 @@ function RichTextActive(props: BlockRendererProps<BasicRichTextBlock>) {
             return false
           }
 
+          const mergedTextOffset = getInlineContentTextLength(previousBlock.content)
           const result = props.editor.dispatch({
             type: 'mergeBlock',
             targetBlockId: previousBlock.id,
@@ -211,7 +223,7 @@ function RichTextActive(props: BlockRendererProps<BasicRichTextBlock>) {
             ignoreContentUpdatesAfterStructuralIntentRef.current = true
             props.editor.dispatch({
               type: 'setSelection',
-              selection: { type: 'block', blockId: previousBlock.id },
+              selection: createCollapsedTextSelection(previousBlock.id, mergedTextOffset),
             })
             focusBlockShellAfterRender(activeBlockRootRef.current, previousBlock.id)
           }
@@ -234,7 +246,7 @@ function RichTextActive(props: BlockRendererProps<BasicRichTextBlock>) {
             ignoreContentUpdatesAfterStructuralIntentRef.current = true
             props.editor.dispatch({
               type: 'setSelection',
-              selection: { type: 'block', blockId: afterBlockId },
+              selection: createCollapsedTextSelection(afterBlockId, 0),
             })
             focusBlockShellAfterRender(activeBlockRootRef.current, afterBlockId)
           }
@@ -246,6 +258,7 @@ function RichTextActive(props: BlockRendererProps<BasicRichTextBlock>) {
         onSelectAll={() => {
           return trySelectAllInActiveDocumentOrBlock(activeBlockRootRef.current, props.editor)
         }}
+        initialTextOffset={initialTextOffset}
         placeholder="Type..."
         value={value}
       />
@@ -282,6 +295,29 @@ function updateRichTextBlockContent(
     blockId: props.block.id,
     patch: { content: nextValue },
   })
+}
+
+function resolveInitialTextOffset(
+  selection: DocumentSelection,
+  blockId: string,
+  content: InlineContent,
+): number {
+  if (selection.type === 'text' && selection.blockId === blockId) {
+    return selection.focus.offset
+  }
+
+  return getInlineContentTextLength(content)
+}
+
+function createCollapsedTextSelection(blockId: string, offset: number): DocumentSelection {
+  const point = { path: [], offset }
+
+  return {
+    type: 'text',
+    blockId,
+    anchor: point,
+    focus: point,
+  }
 }
 
 function findPreviousSiblingBlock(document: DocumentState, blockId: string): DocBlock | undefined {
@@ -337,7 +373,13 @@ function trySelectAllInActiveDocumentOrBlock(
   const topLevelBlockIds = getBlockChildren(editorDocument, editorDocument.rootId)
 
   if (topLevelBlockIds.length > 1) {
-    return selectAllTopLevelBlocks(editor) !== undefined
+    const firstSelectedBlockId = selectAllTopLevelBlocks(editor)
+    if (firstSelectedBlockId === undefined) {
+      return false
+    }
+
+    focusBlockShellAfterRender(root, firstSelectedBlockId)
+    return true
   }
 
   if (root === null || typeof globalThis.getSelection !== 'function') {
