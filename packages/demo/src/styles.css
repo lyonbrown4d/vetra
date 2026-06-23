@@ -904,6 +904,34 @@ textarea:focus-visible,
   line-height: 1.35;
 }
 
+.vetra-demo-guide-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vetra-demo-guide-list li {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-subtle);
+  padding: 9px;
+}
+
+.vetra-demo-guide-list strong {
+  color: var(--foreground);
+  font-size: 12px;
+}
+
+.vetra-demo-guide-list span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .vetra-demo-code-sample {
   overflow: auto;
   margin: 0;

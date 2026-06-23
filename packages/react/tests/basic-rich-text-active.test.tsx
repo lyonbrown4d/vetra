@@ -32,6 +32,13 @@ interface MockLexicalMergeBlockBackwardIntent {
   readonly content: InlineContent
 }
 
+interface MockLexicalConvertBlockTypeIntent {
+  readonly type: 'convertBlockType'
+  readonly blockType: 'heading' | 'quote' | 'code' | 'divider'
+  readonly props?: Readonly<Record<string, unknown>> | undefined
+  readonly content?: unknown
+}
+
 interface MockLexicalBlockEditorProps {
   readonly value: InlineContent
   readonly autoFocus?: boolean
@@ -41,6 +48,7 @@ interface MockLexicalBlockEditorProps {
     intent: MockLexicalMergeBlockBackwardIntent,
   ) => boolean | undefined
   readonly onSplitBlock?: (intent: MockLexicalSplitBlockIntent) => boolean | undefined
+  readonly onConvertBlockType?: (intent: MockLexicalConvertBlockTypeIntent) => boolean | undefined
   readonly onUndo?: () => boolean | undefined
   readonly onRedo?: () => boolean | undefined
 }
@@ -195,6 +203,79 @@ describe('basic rich text active renderer bridge', () => {
 
       expect(handled).toBe(false)
       expect(readBlockText(editor, 'block-a')).toBe('Committed')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('converts an active rich text block from a markdown shortcut intent', () => {
+    const editor = createEditorWithParagraphs([paragraph('block-a', '# Title')], 'block-a')
+    const rendered = renderBlock(editor, 'block-a')
+
+    try {
+      const activeEditor = getActiveLexicalProps()
+      let handled: boolean | undefined
+
+      act(() => {
+        handled = activeEditor.onConvertBlockType?.({
+          type: 'convertBlockType',
+          blockType: 'heading',
+          props: { level: 1 },
+          content: inlineText('Title'),
+        })
+      })
+
+      expect(handled).toBe(true)
+      expect(editor.getState().document.blocks['block-a']).toMatchObject({
+        id: 'block-a',
+        type: 'heading',
+        props: { level: 1 },
+      })
+      expect(readBlockText(editor, 'block-a')).toBe('Title')
+      expect(editor.getState().selection).toEqual(createCollapsedTextSelection('block-a', 0))
+
+      act(() => {
+        activeEditor.onChange(inlineText('Edited'))
+      })
+
+      expect(readBlockText(editor, 'block-a')).toBe('Edited')
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it('suppresses stale rich text commits after converting to a divider', () => {
+    const editor = createEditorWithParagraphs([paragraph('block-a', '---')], 'block-a')
+    const rendered = renderBlock(editor, 'block-a')
+
+    try {
+      const activeEditor = getActiveLexicalProps()
+      let handled: boolean | undefined
+
+      act(() => {
+        handled = activeEditor.onConvertBlockType?.({
+          type: 'convertBlockType',
+          blockType: 'divider',
+          props: undefined,
+          content: undefined,
+        })
+        activeEditor.onCommit?.({
+          type: 'commitInlineContent',
+          reason: 'unmount',
+          content: inlineText('---'),
+        })
+      })
+
+      const block = editor.getState().document.blocks['block-a']
+
+      expect(handled).toBe(true)
+      expect(block).toMatchObject({
+        id: 'block-a',
+        type: 'divider',
+      })
+      expect(block).toBeDefined()
+      expect('content' in expectDefined(block)).toBe(false)
+      expect(editor.getState().selection).toEqual({ type: 'block', blockId: 'block-a' })
     } finally {
       rendered.cleanup()
     }

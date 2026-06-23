@@ -12,6 +12,14 @@ The repository is intentionally split by responsibility:
 - `vetra-playground`: Vite playground app for downstream integration and runtime inspection
   (currently located at `packages/demo` until the Windows directory lock is cleared).
 
+## Playground Markdown Experience
+
+The playground surfaces the Markdown-facing workflow without moving external format parsing into core:
+
+- Input shortcuts shown in the sidebar cover `#`, `##`, `>`, <code>```</code>, and `---` for heading, quote, code, and divider flows when the renderer shortcut layer is available.
+- The Markdown tab demonstrates import/export through `@vetra/import-markdown` and `@vetra/export-markdown` against Vetra `DocumentState`.
+- Markdown paste is documented as a React renderer paste-bridge flow that should hand off to the optional Markdown adapter; `@vetra/core` remains parser-free.
+
 ## Development
 
 ```bash

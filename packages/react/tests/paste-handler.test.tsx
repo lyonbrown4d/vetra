@@ -99,6 +99,104 @@ describe('paste handler', () => {
     expect(blockText(editor.getState().document.blocks['paste-2'])).toBe('Second')
   })
 
+  it('detects obvious Markdown plain text and pastes imported blocks', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('anchor', 'Anchor'), paragraph('tail', 'Tail')],
+    })
+    const editor = createEditor(createEditorState(document))
+    const handlePaste = createPasteHandler({
+      editor,
+      target: { referenceBlockId: 'anchor' },
+      idFactory: ({ index, kind }) => `${kind}-${String(index)}`,
+    })
+
+    const result = expectPasteOk(
+      handlePaste({
+        text: ['# Title', '', '> Quoted', '', '---', '', '```ts', 'const answer = 42', '```'].join(
+          '\n',
+        ),
+      }),
+    )
+
+    expect(result.insertedBlockIds).toEqual([
+      'markdown-0',
+      'markdown-1',
+      'markdown-2',
+      'markdown-3',
+    ])
+    expect(editor.getState().document.children.root).toEqual([
+      'anchor',
+      'markdown-0',
+      'markdown-1',
+      'markdown-2',
+      'markdown-3',
+      'tail',
+    ])
+    expect(editor.getState().document.blocks['markdown-0']).toMatchObject({
+      type: 'heading',
+      props: { level: 1 },
+    })
+    expect(blockText(editor.getState().document.blocks['markdown-0'])).toBe('Title')
+    expect(editor.getState().document.blocks['markdown-1']?.type).toBe('quote')
+    expect(blockText(editor.getState().document.blocks['markdown-1'])).toBe('Quoted')
+    expect(editor.getState().document.blocks['markdown-2']?.type).toBe('divider')
+    expect(editor.getState().document.blocks['markdown-3']).toMatchObject({
+      type: 'code',
+      props: { language: 'ts' },
+      content: 'const answer = 42',
+    })
+  })
+
+  it('keeps ordinary plain text on the plain text paste path', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('anchor', 'Anchor')],
+    })
+    const editor = createEditor(createEditorState(document))
+    const handlePaste = createPasteHandler({
+      editor,
+      target: { referenceBlockId: 'anchor' },
+      idFactory: ({ index, kind }) => `${kind}-${String(index)}`,
+    })
+
+    const result = expectPasteOk(handlePaste({ text: 'A # character is ordinary text' }))
+
+    expect(result.insertedBlockIds).toEqual(['plain-text-0'])
+    expect(editor.getState().document.blocks['plain-text-0']?.type).toBe('paragraph')
+    expect(blockText(editor.getState().document.blocks['plain-text-0'])).toBe(
+      'A # character is ordinary text',
+    )
+  })
+
+  it('does not guess unsupported or uncertain Markdown-looking plain text', () => {
+    const document = createDocument({
+      id: 'doc',
+      blocks: [paragraph('anchor', 'Anchor')],
+    })
+    const editor = createEditor(createEditorState(document))
+    const handlePaste = createPasteHandler({
+      editor,
+      target: { referenceBlockId: 'anchor' },
+      idFactory: ({ index, kind, text }) =>
+        `${kind}-${text.startsWith('-') ? 'list' : 'fence'}-${String(index)}`,
+    })
+
+    const listResult = expectPasteOk(handlePaste({ text: ['- one', '- two'].join('\n') }))
+
+    expect(listResult.insertedBlockIds).toEqual(['plain-text-list-0'])
+    expect(editor.getState().document.blocks['plain-text-list-0']?.type).toBe('paragraph')
+    expect(blockText(editor.getState().document.blocks['plain-text-list-0'])).toBe('- one\n- two')
+
+    const openFenceResult = expectPasteOk(handlePaste({ text: ['```', 'not closed'].join('\n') }))
+
+    expect(openFenceResult.insertedBlockIds).toEqual(['plain-text-fence-0'])
+    expect(editor.getState().document.blocks['plain-text-fence-0']?.type).toBe('paragraph')
+    expect(blockText(editor.getState().document.blocks['plain-text-fence-0'])).toBe(
+      '```\nnot closed',
+    )
+  })
+
   it('records multi paragraph plain text paste as one undo step', () => {
     const document = createDocument({
       id: 'doc',

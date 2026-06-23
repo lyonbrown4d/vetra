@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { InlineContent } from '@vetra/core'
 import {
+  createMarkdownShortcutIntent,
   createMergeBlockBackwardIntent,
   createSplitBlockIntent,
   dispatchLexicalBlockStructuralIntent,
@@ -60,6 +61,114 @@ describe('lexical command bridge helpers', () => {
     expect(createSplitBlockIntent(collapsedBoundary, { isComposing: true })).toBeUndefined()
     expect(createSplitBlockIntent(expandedBoundary, { isComposing: false })).toBeUndefined()
     expect(createMergeBlockBackwardIntent(collapsedBoundary, { isComposing: true })).toBeUndefined()
+  })
+
+  it('creates markdown shortcut conversion intents and strips syntax prefixes', () => {
+    expect(
+      createMarkdownShortcutIntent(boundary({ content: inlineText('# Heading'), textOffset: 2 }), {
+        isComposing: false,
+      }),
+    ).toEqual({
+      type: 'convertBlockType',
+      blockType: 'heading',
+      props: { level: 1 },
+      content: inlineText('Heading'),
+    })
+    expect(
+      createMarkdownShortcutIntent(boundary({ content: inlineText('## Heading'), textOffset: 3 }), {
+        isComposing: false,
+      }),
+    ).toMatchObject({ blockType: 'heading', props: { level: 2 }, content: inlineText('Heading') })
+    expect(
+      createMarkdownShortcutIntent(
+        boundary({ content: inlineText('### Heading'), textOffset: 4 }),
+        {
+          isComposing: false,
+        },
+      ),
+    ).toMatchObject({ blockType: 'heading', props: { level: 3 }, content: inlineText('Heading') })
+    expect(
+      createMarkdownShortcutIntent(boundary({ content: inlineText('> Quote'), textOffset: 2 }), {
+        isComposing: false,
+      }),
+    ).toEqual({
+      type: 'convertBlockType',
+      blockType: 'quote',
+      props: undefined,
+      content: inlineText('Quote'),
+    })
+    expect(
+      createMarkdownShortcutIntent(boundary({ content: inlineText('``` code'), textOffset: 4 }), {
+        isComposing: false,
+      }),
+    ).toEqual({
+      type: 'convertBlockType',
+      blockType: 'code',
+      props: undefined,
+      content: 'code',
+    })
+    expect(
+      createMarkdownShortcutIntent(boundary({ content: inlineText('---'), textOffset: 3 }), {
+        isComposing: false,
+      }),
+    ).toBeUndefined()
+  })
+
+  it('does not create markdown shortcut intents for ordinary input or composition', () => {
+    const headingBoundary = boundary({ content: inlineText('# Heading'), textOffset: 2 })
+
+    expect(
+      createMarkdownShortcutIntent(boundary({ content: inlineText('#Heading'), textOffset: 8 }), {
+        isComposing: false,
+      }),
+    ).toBeUndefined()
+    expect(
+      createMarkdownShortcutIntent(boundary({ content: inlineText('# Heading'), textOffset: 9 }), {
+        isComposing: false,
+      }),
+    ).toBeUndefined()
+    expect(createMarkdownShortcutIntent(headingBoundary, { isComposing: true })).toBeUndefined()
+    expect(
+      createMarkdownShortcutIntent(
+        boundary({ content: inlineText('# Heading'), isCollapsed: false, textOffset: 2 }),
+        { isComposing: false },
+      ),
+    ).toBeUndefined()
+  })
+
+  it('creates a code conversion intent for triple backticks followed by Enter', () => {
+    expect(
+      createMarkdownShortcutIntent(
+        boundary({ content: inlineText('```'), textOffset: 3 }),
+        { isComposing: false },
+        'enter',
+      ),
+    ).toEqual({
+      type: 'convertBlockType',
+      blockType: 'code',
+      props: undefined,
+      content: '',
+    })
+    expect(
+      createMarkdownShortcutIntent(boundary({ content: inlineText('```'), textOffset: 3 }), {
+        isComposing: false,
+      }),
+    ).toBeUndefined()
+  })
+
+  it('creates a divider conversion intent for triple dashes followed by Enter', () => {
+    expect(
+      createMarkdownShortcutIntent(
+        boundary({ content: inlineText('---'), textOffset: 3 }),
+        { isComposing: false },
+        'enter',
+      ),
+    ).toEqual({
+      type: 'convertBlockType',
+      blockType: 'divider',
+      props: undefined,
+      content: undefined,
+    })
   })
 
   it('creates merge backward intents only at a collapsed start-like boundary', () => {
@@ -130,6 +239,12 @@ describe('lexical command bridge helpers', () => {
       type: 'mergeBlockBackward',
       content: inlineText('B'),
     } as const
+    const convertIntent = {
+      type: 'convertBlockType',
+      blockType: 'heading',
+      props: { level: 1 },
+      content: inlineText('Title'),
+    } as const
     const handledTypes: string[] = []
 
     expect(
@@ -138,6 +253,7 @@ describe('lexical command bridge helpers', () => {
         onSplitBlock(intent) {
           handledTypes.push(intent.type)
         },
+        onConvertBlockType: undefined,
         onStructuralIntent: undefined,
       }),
     ).toBe(true)
@@ -147,19 +263,31 @@ describe('lexical command bridge helpers', () => {
           return false
         },
         onSplitBlock: undefined,
+        onConvertBlockType: undefined,
         onStructuralIntent: undefined,
       }),
     ).toBe(false)
     expect(
+      dispatchLexicalBlockStructuralIntent(convertIntent, {
+        onMergeBlockBackward: undefined,
+        onSplitBlock: undefined,
+        onConvertBlockType(intent) {
+          handledTypes.push(`${intent.type}:${intent.blockType}`)
+        },
+        onStructuralIntent: undefined,
+      }),
+    ).toBe(true)
+    expect(
       dispatchLexicalBlockStructuralIntent(splitIntent, {
         onMergeBlockBackward: undefined,
         onSplitBlock: undefined,
+        onConvertBlockType: undefined,
         onStructuralIntent() {
           handledTypes.push('generic')
         },
       }),
     ).toBe(true)
-    expect(handledTypes).toEqual(['splitBlock', 'generic'])
+    expect(handledTypes).toEqual(['splitBlock', 'convertBlockType:heading', 'generic'])
   })
 })
 

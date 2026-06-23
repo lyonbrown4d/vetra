@@ -1154,6 +1154,8 @@ Playground 应作为下游调用方理解 Vetra 能力的完整示例，而不�
 - 编辑画布不使用 card 外框，active block 不弹出卡片化容器；
 - slash menu 使用 Floating UI 在 active block 附近浮层定位，不占据文档流；
 - slash menu 支持 `/h1`、`/h2`、`/todo`、`/note`、`/code js` 等 alias / token query，并用现有 icon library 展示 block action；
+- playground 侧栏必须清楚展示 Markdown input shortcuts：`#`、`##`、`>`、<code>```</code>、`---`，用于说明 heading、quote、code、divider 的输入体验；
+- Markdown paste / import / export 展示属于 React renderer + playground + optional adapter package 的集成说明，不代表 core 内建 Markdown parser；
 - 每个 block 前展示 gutter controls，包括加号插入段落和拖拽手柄；
 - block reorder 通过 dnd-kit 在 React renderer 内完成交互编排，并通过 core `moveBlock` command 修改文档顺序；
 - playground inspector 展示 document version、active block、selected count、mounted block count、active editor count 和 activity log；
@@ -1732,6 +1734,8 @@ Lexical EditorState
 ### 25.4 Markdown / Plain Text / HTML 不属于 Core 职责
 
 Markdown、Plain Text、HTML 都属于外部输入格式，不是 core 内部模型。
+
+Playground 可以展示 Markdown shortcuts、Markdown paste、Markdown import/export 的体验入口，但这些展示应通过 React renderer 的输入/粘贴桥接与独立 adapter package 表达，不能把 Markdown 解析职责下沉到 core。
 
 Core 不负责：
 

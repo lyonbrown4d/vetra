@@ -34,13 +34,19 @@ import {
   KEY_DOWN_COMMAND,
   KEY_ENTER_COMMAND,
 } from 'lexical'
-import { getInlineContentTextLength, type InlineContent } from '@vetra/core'
 import {
+  createEmptyInlineContent,
+  getInlineContentTextLength,
+  type InlineContent,
+} from '@vetra/core'
+import {
+  createMarkdownShortcutIntent,
   createMergeBlockBackwardIntent,
   createSplitBlockIntent,
   dispatchLexicalBlockStructuralIntent,
   type LexicalBlockContentCommit,
   type LexicalBlockCommitReason,
+  type LexicalConvertBlockTypeIntent,
   type LexicalBlockStructuralIntent,
   type LexicalBlockStructuralIntentCallbacks,
   type LexicalInlineContentBoundary,
@@ -73,6 +79,7 @@ export interface LexicalBlockEditorProps {
   readonly onChange: (nextValue: InlineContent) => void
   readonly onMergeBlockBackward?: (intent: LexicalMergeBlockBackwardIntent) => void
   readonly onSplitBlock?: (intent: LexicalSplitBlockIntent) => void
+  readonly onConvertBlockType?: (intent: LexicalConvertBlockTypeIntent) => void
   readonly onStructuralIntent?: (intent: LexicalBlockStructuralIntent) => void
   readonly onUndo?: () => boolean | undefined
   readonly onRedo?: () => boolean | undefined
@@ -96,6 +103,7 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
     onCommit: props.onCommit,
     onMergeBlockBackward: props.onMergeBlockBackward,
     onSplitBlock: props.onSplitBlock,
+    onConvertBlockType: props.onConvertBlockType,
     onStructuralIntent: props.onStructuralIntent,
     onUndo: props.onUndo,
     onRedo: props.onRedo,
@@ -200,7 +208,7 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
         }
       />
       <OnChangePlugin
-        onChange={(editorState: EditorState, _editor, tags) => {
+        onChange={(editorState: EditorState, editor, tags) => {
           if (tags.has(EXTERNAL_VALUE_SYNC_UPDATE_TAG)) {
             return
           }
@@ -209,17 +217,59 @@ export function LexicalBlockEditor(props: LexicalBlockEditorProps) {
             return
           }
 
+          let nextValue: InlineContent | undefined
+          let markdownShortcutIntent: LexicalConvertBlockTypeIntent | undefined
+
           editorState.read(() => {
-            const nextValue = readInlineContentFromLexicalRoot()
-            latestValueRef.current = nextValue
-            props.onChange(nextValue)
+            const boundary = readInlineContentBoundaryFromLexicalSelection()
+            nextValue = boundary?.content ?? readInlineContentFromLexicalRoot()
+
+            if (boundary !== undefined) {
+              markdownShortcutIntent = createMarkdownShortcutIntent(
+                boundary,
+                compositionStateRef.current,
+              )
+            }
           })
+
+          if (nextValue === undefined) {
+            return
+          }
+
+          if (markdownShortcutIntent !== undefined) {
+            const handled = dispatchStructuralIntent(
+              markdownShortcutIntent,
+              bridgeCallbacksRef.current,
+            )
+
+            if (handled) {
+              const nextLexicalValue = getInlineContentAfterMarkdownShortcut(markdownShortcutIntent)
+              latestValueRef.current = nextLexicalValue
+              if (shouldIgnoreInlineUpdatesAfterMarkdownShortcut(markdownShortcutIntent)) {
+                ignoreContentUpdatesAfterStructuralIntentRef.current = true
+              }
+              editor.update(
+                () => {
+                  writeInlineContentToLexicalRoot(nextLexicalValue, 0)
+                },
+                {
+                  discrete: true,
+                  tag: EXTERNAL_VALUE_SYNC_UPDATE_TAG,
+                },
+              )
+              return
+            }
+          }
+
+          latestValueRef.current = nextValue
+          props.onChange(nextValue)
         }}
       />
       <StructuralCommandBridgePlugin
         bridgeCallbacksRef={bridgeCallbacksRef}
         compositionStateRef={compositionStateRef}
         ignoreContentUpdatesAfterStructuralIntentRef={ignoreContentUpdatesAfterStructuralIntentRef}
+        latestValueRef={latestValueRef}
       />
     </LexicalComposer>
   )
@@ -259,6 +309,7 @@ function StructuralCommandBridgePlugin(props: {
   readonly bridgeCallbacksRef: RefObject<LexicalBlockEditorBridgeCallbacks>
   readonly compositionStateRef: RefObject<LexicalBlockEditorCompositionState>
   readonly ignoreContentUpdatesAfterStructuralIntentRef: RefObject<boolean>
+  readonly latestValueRef: RefObject<InlineContent>
 }) {
   const [editor] = useLexicalComposerContext()
 
@@ -300,6 +351,30 @@ function StructuralCommandBridgePlugin(props: {
 
         if (boundary === undefined) {
           return false
+        }
+
+        const markdownShortcutIntent = createMarkdownShortcutIntent(
+          boundary,
+          compositionState,
+          'enter',
+        )
+
+        if (markdownShortcutIntent !== undefined) {
+          const handled = dispatchStructuralIntent(
+            markdownShortcutIntent,
+            props.bridgeCallbacksRef.current,
+          )
+
+          if (handled) {
+            const nextLexicalValue = getInlineContentAfterMarkdownShortcut(markdownShortcutIntent)
+            props.latestValueRef.current = nextLexicalValue
+            writeInlineContentToLexicalRoot(nextLexicalValue, 0)
+            event?.preventDefault()
+            if (shouldIgnoreInlineUpdatesAfterMarkdownShortcut(markdownShortcutIntent)) {
+              props.ignoreContentUpdatesAfterStructuralIntentRef.current = true
+            }
+            return true
+          }
         }
 
         const intent = createSplitBlockIntent(boundary, compositionState)
@@ -364,6 +439,7 @@ function StructuralCommandBridgePlugin(props: {
     props.bridgeCallbacksRef,
     props.compositionStateRef,
     props.ignoreContentUpdatesAfterStructuralIntentRef,
+    props.latestValueRef,
   ])
 
   return null
@@ -435,6 +511,25 @@ function dispatchStructuralIntent(
   callbacks: LexicalBlockEditorBridgeCallbacks,
 ): boolean {
   return dispatchLexicalBlockStructuralIntent(intent, callbacks)
+}
+
+function getInlineContentAfterMarkdownShortcut(
+  intent: LexicalConvertBlockTypeIntent,
+): InlineContent {
+  switch (intent.blockType) {
+    case 'heading':
+    case 'quote':
+      return intent.content
+    case 'code':
+    case 'divider':
+      return createEmptyInlineContent()
+  }
+}
+
+function shouldIgnoreInlineUpdatesAfterMarkdownShortcut(
+  intent: LexicalConvertBlockTypeIntent,
+): boolean {
+  return intent.blockType === 'code' || intent.blockType === 'divider'
 }
 
 function writeInlineContentToLexicalRoot(content: InlineContent, textOffset?: number): void {

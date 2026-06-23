@@ -14,7 +14,7 @@ Block gutter controls are renderer-owned UI. The plus control dispatches `insert
 
 ## Paste
 
-`createPasteHandler` and `usePasteHandler` provide renderer-owned paste orchestration. The default strategy treats clipboard text as plain text through `@vetra/import-plain-text`, converts it to a block fragment, and dispatches the core `insertBlockFragment` command against a caller-provided reference block. The generic handler does not read DOM selection.
+`createPasteHandler` and `usePasteHandler` provide renderer-owned paste orchestration. The default strategy converts `text/plain` clipboard content into a block fragment through the plain-text adapter or, for obvious block-level Markdown, the Markdown adapter, then dispatches the core `insertBlockFragment` command against a caller-provided reference block. The generic handler does not read DOM selection.
 
 `EditorRoot` owns browser clipboard events for block-level selection. When a block or block range is selected, copy and cut write:
 
@@ -23,7 +23,7 @@ Block gutter controls are renderer-owned UI. The plus control dispatches `insert
 
 Paste prefers the Vetra block MIME when present, then `text/html` through `@vetra/import-html`, then `text/plain`. Pasted block ids are remapped before dispatch. Browser events, MIME priority, focus restoration, and clipboard fallbacks stay in `@vetra/react`; `@vetra/core` stays framework-agnostic and only receives command intents.
 
-Markdown remains opt-in: callers can pass an explicit `PasteBlockStrategy`, or wrap a document importer with `createDocumentPasteStrategy`, instead of relying on automatic format guessing.
+For `text/plain` paste, the default strategy conservatively recognizes obvious Markdown block syntax (`#` / `##` headings, `>` quotes, closed fenced code blocks, and standalone dividers such as `---`) and delegates conversion to `@vetra/import-markdown` before dispatching the same paste fragment command path. Ordinary plain text and unsupported or ambiguous Markdown-looking input stay on the `@vetra/import-plain-text` path. Callers can still pass an explicit `PasteBlockStrategy`, or wrap a document importer with `createDocumentPasteStrategy`, to fully control paste parsing.
 
 HTML remains an adapter concern. `@vetra/import-html` and `@vetra/export-html` own external HTML conversion; browser `text/html` paste is wired through those adapters from React rather than by adding HTML parsing to core.
 

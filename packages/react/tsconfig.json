@@ -11,6 +11,7 @@
   "references": [
     { "path": "../core" },
     { "path": "../import-html" },
+    { "path": "../import-markdown" },
     { "path": "../import-plain-text" },
     { "path": "../persistence-json" }
   ]

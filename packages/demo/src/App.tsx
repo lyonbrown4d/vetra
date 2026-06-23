@@ -101,6 +101,11 @@ const shortcutRows: readonly {
   readonly action: string
 }[] = [
   { keys: '/', action: 'Open slash menu' },
+  { keys: '# Space', action: 'Convert an empty paragraph to heading 1 when available' },
+  { keys: '## Space', action: 'Convert an empty paragraph to heading 2 when available' },
+  { keys: '> Space', action: 'Convert an empty paragraph to quote when available' },
+  { keys: '``` Space', action: 'Convert an empty paragraph to code when available' },
+  { keys: '--- Enter', action: 'Convert an empty paragraph to divider when available' },
   { keys: 'Ctrl/Cmd + Z', action: 'Undo document change' },
   { keys: 'Ctrl/Cmd + Shift + Z', action: 'Redo document change' },
   { keys: 'Ctrl/Cmd + A', action: 'Select all top-level blocks from block focus' },
@@ -109,6 +114,32 @@ const shortcutRows: readonly {
   { keys: 'Esc', action: 'Return to block selection' },
   { keys: 'Up / Down', action: 'Move block selection' },
   { keys: 'Delete', action: 'Delete selected block or block range' },
+]
+
+const markdownExperienceRows: readonly {
+  readonly label: string
+  readonly value: string
+}[] = [
+  {
+    label: 'Input shortcuts',
+    value:
+      '#, ##, >, ```, and --- are renderer shortcuts that map typed Markdown tokens to block commands.',
+  },
+  {
+    label: 'Paste',
+    value:
+      'Markdown clipboard content is expected to flow through the React paste bridge, then into the optional Markdown import adapter.',
+  },
+  {
+    label: 'Import',
+    value:
+      'Use the Markdown tab to load Markdown through @vetra/import-markdown into a Vetra DocumentState.',
+  },
+  {
+    label: 'Export',
+    value:
+      'Use the Markdown tab to export the current DocumentState through @vetra/export-markdown.',
+  },
 ]
 
 const apiSnippet = [
@@ -513,6 +544,21 @@ export function App() {
               />
             </div>
           ) : null}
+        </section>
+
+        <section className="vetra-demo-panel" aria-labelledby="markdown-experience-title">
+          <div className="vetra-demo-panel__header">
+            <h2 id="markdown-experience-title">Markdown experience</h2>
+            <span>Shortcuts, paste, import, and export stay outside core</span>
+          </div>
+          <ul className="vetra-demo-guide-list">
+            {markdownExperienceRows.map((row) => (
+              <li key={row.label}>
+                <strong>{row.label}</strong>
+                <span>{row.value}</span>
+              </li>
+            ))}
+          </ul>
         </section>
 
         <output

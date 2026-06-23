@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { LexicalBlockEditor } from '@vetra/lexical'
+import { LexicalBlockEditor, type LexicalConvertBlockTypeIntent } from '@vetra/lexical'
 import { defineReactBlock, type AnyReactBlockPlugin, type BlockRendererProps } from '@vetra/react'
 import type {
   DividerBlock,
@@ -253,6 +253,36 @@ function RichTextActive(props: BlockRendererProps<BasicRichTextBlock>) {
 
           return result.ok
         }}
+        onConvertBlockType={(intent) => {
+          if (props.block.type !== 'paragraph') {
+            return false
+          }
+
+          const result = props.editor.dispatch({
+            type: 'convertBlockType',
+            blockId: props.block.id,
+            blockType: intent.blockType,
+            props: intent.props,
+            content: intent.content,
+          })
+
+          if (result.ok) {
+            if (shouldSuppressRichTextUpdatesAfterConversion(intent)) {
+              ignoreContentUpdatesAfterStructuralIntentRef.current = true
+            }
+
+            props.editor.dispatch({
+              type: 'setSelection',
+              selection: createSelectionAfterBlockTypeConversion(props.block.id, intent),
+            })
+
+            if (shouldFocusBlockShellAfterConversion(intent)) {
+              focusBlockShellAfterRender(activeBlockRootRef.current, props.block.id)
+            }
+          }
+
+          return result.ok
+        }}
         onUndo={() => props.editor.undo().ok}
         onRedo={() => props.editor.redo().ok}
         onSelectAll={() => {
@@ -295,6 +325,30 @@ function updateRichTextBlockContent(
     blockId: props.block.id,
     patch: { content: nextValue },
   })
+}
+
+function createSelectionAfterBlockTypeConversion(
+  blockId: string,
+  intent: LexicalConvertBlockTypeIntent,
+): DocumentSelection {
+  switch (intent.blockType) {
+    case 'heading':
+    case 'quote':
+      return createCollapsedTextSelection(blockId, 0)
+    case 'code':
+    case 'divider':
+      return { type: 'block', blockId }
+  }
+}
+
+function shouldSuppressRichTextUpdatesAfterConversion(
+  intent: LexicalConvertBlockTypeIntent,
+): boolean {
+  return intent.blockType === 'code' || intent.blockType === 'divider'
+}
+
+function shouldFocusBlockShellAfterConversion(intent: LexicalConvertBlockTypeIntent): boolean {
+  return intent.blockType === 'code' || intent.blockType === 'divider'
 }
 
 function resolveInitialTextOffset(

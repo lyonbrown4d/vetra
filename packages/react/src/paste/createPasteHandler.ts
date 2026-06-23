@@ -1,3 +1,4 @@
+import { markdownToDocument } from '@vetra/import-markdown'
 import { plainTextToDocument, type PlainTextSplitStrategy } from '@vetra/import-plain-text'
 import {
   err,
@@ -70,6 +71,10 @@ export type PasteDocumentImporter = (
 
 export interface PlainTextPasteStrategyOptions {
   readonly splitBy?: PlainTextSplitStrategy
+}
+
+export interface DefaultPasteStrategyOptions {
+  readonly plainText?: PlainTextPasteStrategyOptions
 }
 
 export interface CreatePasteHandlerOptions {
@@ -149,14 +154,58 @@ export function createPlainTextPasteStrategy(
   }
 }
 
+export function createMarkdownPasteStrategy(): PasteBlockStrategy {
+  return (input, context) => {
+    const document = markdownToDocument(input.text, {
+      rootId: pasteImportRootId,
+      generateBlockId: ({ ordinal }) =>
+        context.idFactory({
+          index: ordinal - 1,
+          text: input.text,
+          kind: markdownPasteKind,
+        }),
+    })
+
+    return createPasteFragmentFromDocument(document)
+  }
+}
+
+export function createDefaultPasteStrategy(
+  options: DefaultPasteStrategyOptions = {},
+): PasteBlockStrategy {
+  const plainTextStrategy = createPlainTextPasteStrategy(options.plainText)
+  const markdownStrategy = createMarkdownPasteStrategy()
+
+  return (input, context) => {
+    if (shouldUseMarkdownPasteStrategy(input)) {
+      return markdownStrategy(
+        {
+          text: input.text,
+          kind: markdownPasteKind,
+        },
+        context,
+      )
+    }
+
+    return plainTextStrategy(input, context)
+  }
+}
+
 export function createDocumentPasteStrategy(
   importDocument: PasteDocumentImporter,
 ): PasteBlockStrategy {
   return (input, context) => createPasteFragmentFromDocument(importDocument(input, context))
 }
 
+function resolveDefaultPasteStrategyOptions(
+  plainText: PlainTextPasteStrategyOptions | undefined,
+): DefaultPasteStrategyOptions {
+  return plainText === undefined ? {} : { plainText }
+}
 export function createPasteHandler(options: CreatePasteHandlerOptions): PasteHandler {
-  const strategy = options.strategy ?? createPlainTextPasteStrategy(options.plainText)
+  const strategy =
+    options.strategy ??
+    createDefaultPasteStrategy(resolveDefaultPasteStrategyOptions(options.plainText))
   const idFactory = options.idFactory ?? defaultPasteBlockIdFactory
 
   return (input) =>
@@ -173,7 +222,9 @@ export function pasteIntoEditor(options: PasteIntoEditorOptions): Result<PasteRe
     return ok(createNoopPasteResult())
   }
 
-  const strategy = options.strategy ?? createPlainTextPasteStrategy(options.plainText)
+  const strategy =
+    options.strategy ??
+    createDefaultPasteStrategy(resolveDefaultPasteStrategyOptions(options.plainText))
   const idFactory = options.idFactory ?? defaultPasteBlockIdFactory
   const importResult = importPasteFragment({
     input: options.input,
@@ -189,6 +240,100 @@ export function pasteIntoEditor(options: PasteIntoEditorOptions): Result<PasteRe
     target: options.target,
     fragment: importResult.value,
   })
+}
+
+function shouldUseMarkdownPasteStrategy(input: PasteStrategyInput): boolean {
+  if (input.kind === markdownPasteKind) {
+    return true
+  }
+
+  if (input.kind !== plainTextPasteKind) {
+    return false
+  }
+
+  return isObviousMarkdownPlainText(input.text)
+}
+
+function isObviousMarkdownPlainText(text: string): boolean {
+  const lines = normalizePasteLineEndings(text).split('\n')
+  const nonBlankLines = lines.filter((line) => line.trim().length > 0)
+
+  if (nonBlankLines.length === 0) {
+    return false
+  }
+
+  if (hasClosedCodeFence(nonBlankLines)) {
+    return true
+  }
+
+  if (nonBlankLines.some(isHeadingLine)) {
+    return true
+  }
+
+  if (nonBlankLines.some(isQuoteLine)) {
+    return true
+  }
+
+  return nonBlankLines.length === 1 && isDividerLine(nonBlankLines[0] ?? '')
+}
+
+function normalizePasteLineEndings(text: string): string {
+  return text.replace(/\r\n?/g, '\n')
+}
+
+function hasClosedCodeFence(nonBlankLines: readonly string[]): boolean {
+  const opening = parseFenceOpening(nonBlankLines[0] ?? '')
+  if (opening === undefined) {
+    return false
+  }
+
+  return nonBlankLines.slice(1).some((line) => isFenceClosing(line, opening))
+}
+
+interface PasteFenceOpening {
+  readonly marker: '`' | '~'
+  readonly length: number
+}
+
+function parseFenceOpening(line: string): PasteFenceOpening | undefined {
+  const match = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line)
+  const fence = match?.[2]
+  if (fence === undefined) {
+    return undefined
+  }
+
+  const marker = fence[0]
+  if (marker !== '`' && marker !== '~') {
+    return undefined
+  }
+
+  return {
+    marker,
+    length: fence.length,
+  }
+}
+
+function isFenceClosing(line: string, opening: PasteFenceOpening): boolean {
+  const trimmed = line.trim()
+  let markerCount = 0
+
+  while (trimmed[markerCount] === opening.marker) {
+    markerCount += 1
+  }
+
+  return markerCount >= opening.length && trimmed.slice(markerCount).trim().length === 0
+}
+
+function isHeadingLine(line: string): boolean {
+  return /^ {0,3}#{1,6}[ \t]+\S/.test(line)
+}
+
+function isQuoteLine(line: string): boolean {
+  return /^ {0,3}>[ \t]+\S/.test(line) || /^ {0,3}>[ \t]*$/.test(line)
+}
+
+function isDividerLine(line: string): boolean {
+  return /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(line)
 }
 
 function importPasteFragment(

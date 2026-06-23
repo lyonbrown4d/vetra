@@ -3,6 +3,7 @@ import {
   canRunStructuralKeyCommand,
   type LexicalBlockEditorCompositionState,
 } from '@vetra/lexical/composition'
+import { inlineContentToPlainText } from '@vetra/lexical/serializers/plainText'
 
 export type LexicalBlockCommitReason = 'blur' | 'unmount'
 
@@ -29,7 +30,38 @@ export interface LexicalMergeBlockBackwardIntent {
   readonly content: InlineContent
 }
 
-export type LexicalBlockStructuralIntent = LexicalSplitBlockIntent | LexicalMergeBlockBackwardIntent
+export type LexicalMarkdownShortcutTrigger = 'textInput' | 'enter'
+
+export type LexicalConvertBlockTypeIntent =
+  | {
+      readonly type: 'convertBlockType'
+      readonly blockType: 'heading'
+      readonly props: { readonly level: 1 | 2 | 3 }
+      readonly content: InlineContent
+    }
+  | {
+      readonly type: 'convertBlockType'
+      readonly blockType: 'quote'
+      readonly props?: undefined
+      readonly content: InlineContent
+    }
+  | {
+      readonly type: 'convertBlockType'
+      readonly blockType: 'code'
+      readonly props?: undefined
+      readonly content: string
+    }
+  | {
+      readonly type: 'convertBlockType'
+      readonly blockType: 'divider'
+      readonly props?: undefined
+      readonly content?: undefined
+    }
+
+export type LexicalBlockStructuralIntent =
+  | LexicalSplitBlockIntent
+  | LexicalMergeBlockBackwardIntent
+  | LexicalConvertBlockTypeIntent
 export type LexicalBlockStructuralIntentResult = unknown
 
 export interface LexicalBlockStructuralIntentCallbacks {
@@ -38,6 +70,9 @@ export interface LexicalBlockStructuralIntentCallbacks {
     | undefined
   readonly onSplitBlock:
     | ((intent: LexicalSplitBlockIntent) => LexicalBlockStructuralIntentResult)
+    | undefined
+  readonly onConvertBlockType:
+    | ((intent: LexicalConvertBlockTypeIntent) => LexicalBlockStructuralIntentResult)
     | undefined
   readonly onStructuralIntent:
     | ((intent: LexicalBlockStructuralIntent) => LexicalBlockStructuralIntentResult)
@@ -62,6 +97,13 @@ export function dispatchLexicalBlockStructuralIntent(
     case 'mergeBlockBackward':
       return resolveStructuralIntentHandlerResult(
         callbacks.onMergeBlockBackward,
+        hasGenericHandler,
+        genericResult,
+        intent,
+      )
+    case 'convertBlockType':
+      return resolveStructuralIntentHandlerResult(
+        callbacks.onConvertBlockType,
         hasGenericHandler,
         genericResult,
         intent,
@@ -98,6 +140,62 @@ export function createMergeBlockBackwardIntent(
     type: 'mergeBlockBackward',
     content: boundary.content,
   }
+}
+
+export function createMarkdownShortcutIntent(
+  boundary: LexicalInlineContentBoundary,
+  compositionState: LexicalBlockEditorCompositionState,
+  trigger: LexicalMarkdownShortcutTrigger = 'textInput',
+): LexicalConvertBlockTypeIntent | undefined {
+  if (!boundary.isCollapsed || !canRunStructuralKeyCommand(compositionState)) {
+    return undefined
+  }
+
+  const text = inlineContentToPlainText(boundary.content)
+  const headingIntent =
+    trigger === 'textInput' ? createHeadingMarkdownShortcutIntent(boundary, text) : undefined
+
+  if (headingIntent !== undefined) {
+    return headingIntent
+  }
+
+  if (trigger === 'textInput' && text.startsWith('> ') && boundary.textOffset === 2) {
+    return {
+      type: 'convertBlockType',
+      blockType: 'quote',
+      props: undefined,
+      content: stripInlineContentPrefix(boundary.content, 2),
+    }
+  }
+
+  if (trigger === 'textInput' && text.startsWith('``` ') && boundary.textOffset === 4) {
+    return {
+      type: 'convertBlockType',
+      blockType: 'code',
+      props: undefined,
+      content: inlineContentToPlainText(stripInlineContentPrefix(boundary.content, 4)),
+    }
+  }
+
+  if (trigger === 'enter' && text === '```' && boundary.textOffset === 3) {
+    return {
+      type: 'convertBlockType',
+      blockType: 'code',
+      props: undefined,
+      content: '',
+    }
+  }
+
+  if (trigger === 'enter' && text === '---' && boundary.textOffset === 3) {
+    return {
+      type: 'convertBlockType',
+      blockType: 'divider',
+      props: undefined,
+      content: undefined,
+    }
+  }
+
+  return undefined
 }
 
 export function isStartLikeBoundary(boundary: LexicalInlineContentBoundary): boolean {
@@ -248,6 +346,34 @@ function createInlineContentFromNodes(nodes: readonly InlineNode[]): InlineConte
         version: 1,
         children: nodes,
       }
+}
+
+function createHeadingMarkdownShortcutIntent(
+  boundary: LexicalInlineContentBoundary,
+  text: string,
+): LexicalConvertBlockTypeIntent | undefined {
+  const headingShortcuts = [
+    { prefix: '# ', level: 1 },
+    { prefix: '## ', level: 2 },
+    { prefix: '### ', level: 3 },
+  ] as const
+
+  for (const shortcut of headingShortcuts) {
+    if (text.startsWith(shortcut.prefix) && boundary.textOffset === shortcut.prefix.length) {
+      return {
+        type: 'convertBlockType',
+        blockType: 'heading',
+        props: { level: shortcut.level },
+        content: stripInlineContentPrefix(boundary.content, shortcut.prefix.length),
+      }
+    }
+  }
+
+  return undefined
+}
+
+function stripInlineContentPrefix(content: InlineContent, prefixTextLength: number): InlineContent {
+  return splitInlineContentAtTextOffset(content, prefixTextLength).after
 }
 
 function getInlineContentTextLength(content: InlineContent): number {

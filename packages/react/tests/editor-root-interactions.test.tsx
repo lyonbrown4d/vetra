@@ -1083,6 +1083,47 @@ describe('EditorRoot integrated interactions', () => {
     }
   })
 
+  it('pastes obvious Markdown plain text as imported blocks', () => {
+    const rendered = renderEditor(
+      createDocument({
+        id: 'doc',
+        blocks: [paragraph('block-a', 'Anchor')],
+      }),
+    )
+
+    try {
+      act(() => {
+        getBlockShell(rendered.container, 'block-a').dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+      })
+      act(() => {
+        getEditorRoot(rendered.container).dispatchEvent(
+          createPasteEvent('# Imported title\n\n> Quoted line'),
+        )
+      })
+
+      const rootChildren = rendered.latestDocument.children.root ?? []
+      const headingBlockId = expectDefined(rootChildren[1])
+      const quoteBlockId = expectDefined(rootChildren[2])
+
+      expect(rootChildren).toHaveLength(3)
+      expect(rendered.latestDocument.blocks[headingBlockId]).toMatchObject({
+        type: 'heading',
+        props: { level: 1 },
+      })
+      expect(readInlineText(rendered.latestDocument.blocks[headingBlockId]?.content)).toBe(
+        'Imported title',
+      )
+      expect(rendered.latestDocument.blocks[quoteBlockId]?.type).toBe('quote')
+      expect(readInlineText(rendered.latestDocument.blocks[quoteBlockId]?.content)).toBe(
+        'Quoted line',
+      )
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
   it('replaces a range block selection when pasting plain text', () => {
     const rendered = renderEditor(
       createDocument({

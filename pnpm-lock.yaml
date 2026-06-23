@@ -248,6 +248,9 @@ importers:
       '@vetra/import-html':
         specifier: workspace:*
         version: link:../import-html
+      '@vetra/import-markdown':
+        specifier: workspace:*
+        version: link:../import-markdown
       '@vetra/import-plain-text':
         specifier: workspace:*
         version: link:../import-plain-text
