@@ -10,15 +10,21 @@ export interface EditorProviderProps {
   readonly children: ReactNode
 }
 
-const BlockRegistryContext = createContext<readonly AnyReactBlockPlugin[] | null>(null)
+interface BlockRegistryState {
+  readonly plugins: readonly AnyReactBlockPlugin[]
+  readonly pluginsByType: ReadonlyMap<string, AnyReactBlockPlugin>
+}
+
+const BlockRegistryContext = createContext<BlockRegistryState | null>(null)
 
 export function EditorProvider(props: EditorProviderProps) {
   const debugStore = useMemo(() => createEditorDebugStore(), [])
+  const blockRegistry = useMemo(() => createBlockRegistryState(props.blocks), [props.blocks])
 
   return (
     <EditorContext.Provider value={props.editor}>
       <EditorDebugContext.Provider value={debugStore}>
-        <BlockRegistryContext.Provider value={props.blocks}>
+        <BlockRegistryContext.Provider value={blockRegistry}>
           {props.children}
         </BlockRegistryContext.Provider>
       </EditorDebugContext.Provider>
@@ -27,9 +33,34 @@ export function EditorProvider(props: EditorProviderProps) {
 }
 
 export function useBlockRegistry(): readonly AnyReactBlockPlugin[] {
+  return useBlockRegistryState().plugins
+}
+
+export function useBlockPlugin(blockType: string | undefined): AnyReactBlockPlugin | undefined {
+  const registry = useBlockRegistryState()
+
+  return blockType === undefined ? undefined : registry.pluginsByType.get(blockType)
+}
+
+function createBlockRegistryState(blocks: readonly AnyReactBlockPlugin[]): BlockRegistryState {
+  const pluginsByType = new Map<string, AnyReactBlockPlugin>()
+
+  for (const block of blocks) {
+    if (!pluginsByType.has(block.type)) {
+      pluginsByType.set(block.type, block)
+    }
+  }
+
+  return {
+    plugins: blocks,
+    pluginsByType,
+  }
+}
+
+function useBlockRegistryState(): BlockRegistryState {
   return useContextValue(
     BlockRegistryContext,
-    'useBlockRegistry must be used inside <EditorProvider />.',
+    'Block registry hooks must be used inside <EditorProvider />.',
   )
 }
 

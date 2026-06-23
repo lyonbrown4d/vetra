@@ -3,7 +3,7 @@ import { getInlineContentTextLength } from '@vetra/core'
 import type { BlockId, DocBlock, DocumentSelection, InlineContent } from '@vetra/core'
 import { BlockControls } from '@vetra/react/blockControls/BlockControls'
 import { useEditor } from '@vetra/react/context/EditorContext'
-import { useBlockRegistry } from '@vetra/react/EditorProvider'
+import { useBlockPlugin } from '@vetra/react/EditorProvider'
 import { useActiveBlockLifecycle } from '@vetra/react/hooks/useActiveBlockLifecycle'
 import { useBlock } from '@vetra/react/hooks/useBlock'
 import { useMountedBlockRegistration } from '@vetra/react/hooks/useMountedBlockMetrics'
@@ -17,7 +17,7 @@ export interface BlockRendererRootProps {
 export function BlockRenderer(props: BlockRendererRootProps) {
   const editor = useEditor()
   const block = useBlock(props.blockId)
-  const registry = useBlockRegistry()
+  const plugin = useBlockPlugin(block?.type)
   const blockLifecycle = useActiveBlockLifecycle(props.blockId)
   useMountedBlockRegistration(props.blockId)
 
@@ -68,7 +68,6 @@ export function BlockRenderer(props: BlockRendererRootProps) {
     return <UnknownBlockFallback blockId={props.blockId} />
   }
 
-  const plugin = registry.find((candidate) => candidate.type === block.type)
   if (plugin === undefined) {
     return <UnknownBlockFallback blockId={props.blockId} block={block} />
   }

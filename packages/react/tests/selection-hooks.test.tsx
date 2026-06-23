@@ -21,6 +21,7 @@ import {
   type ActiveBlockState,
   type BlockSelectionState,
 } from '@vetra/react'
+import { useRootBlockList } from '@vetra/react/hooks/useRootBlockList'
 
 const reactActEnvironment = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean
@@ -239,6 +240,64 @@ describe('selection hooks', () => {
 })
 
 describe('block hook subscriptions', () => {
+  it('does not re-render the root block list subscriber when block content changes', () => {
+    const editorDocument = createDocument({
+      id: 'doc',
+      blocks: [paragraph('block-a', 'A'), paragraph('block-b', 'B')],
+    })
+    const editor = createEditor(createEditorState(editorDocument))
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    let renderCount = 0
+    let rootBlockIds: readonly string[] = []
+
+    function Probe() {
+      const rootBlockList = useRootBlockList()
+      renderCount += 1
+      rootBlockIds = rootBlockList.blockIds
+
+      return null
+    }
+
+    act(() => {
+      root.render(
+        <EditorProvider blocks={[]} editor={editor}>
+          <Probe />
+        </EditorProvider>,
+      )
+    })
+
+    try {
+      expect(renderCount).toBe(1)
+      expect(rootBlockIds).toEqual(['block-a', 'block-b'])
+
+      act(() => {
+        editor.dispatch({
+          type: 'updateBlock',
+          blockId: 'block-a',
+          patch: { content: createTextInlineContent('A changed') },
+        })
+      })
+
+      expect(renderCount).toBe(1)
+      expect(rootBlockIds).toEqual(['block-a', 'block-b'])
+
+      act(() => {
+        editor.dispatch({
+          type: 'insertBlockAfter',
+          referenceBlockId: 'block-a',
+          block: paragraph('block-c', 'C'),
+        })
+      })
+
+      expect(renderCount).toBe(2)
+      expect(rootBlockIds).toEqual(['block-a', 'block-c', 'block-b'])
+    } finally {
+      unmountRoot(root)
+      container.remove()
+    }
+  })
   it('does not re-render a block subscriber when another block changes', () => {
     const editorDocument = createDocument({
       id: 'doc',

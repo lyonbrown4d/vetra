@@ -118,23 +118,63 @@ function EditorSurface(props: EditorSurfaceProps) {
   const [inlineToolbarPosition, setInlineToolbarPosition] = useState<InlineToolbarPosition | null>(
     null,
   )
+  const inlineToolbarFrameRef = useRef<number | null>(null)
   const slashMenuAnchorElement =
     slashMenuState === null ? null : resolveSlashMenuAnchor(surfaceRef.current, slashMenuState)
   const inlineToolbarStyle = createInlineToolbarStyle(inlineToolbarPosition)
 
+  const setInlineToolbarPositionIfChanged = useCallback(
+    (nextPosition: InlineToolbarPosition | null) => {
+      setInlineToolbarPosition((currentPosition) =>
+        areInlineToolbarPositionsEqual(currentPosition, nextPosition)
+          ? currentPosition
+          : nextPosition,
+      )
+    },
+    [],
+  )
+
   const updateInlineToolbarPosition = useCallback(() => {
-    setInlineToolbarPosition(resolveInlineToolbarPosition(editor, surfaceRef.current))
-  }, [editor])
+    const ownerWindow = surfaceRef.current?.ownerDocument.defaultView
+    if (
+      ownerWindow === undefined ||
+      ownerWindow === null ||
+      typeof ownerWindow.requestAnimationFrame !== 'function'
+    ) {
+      setInlineToolbarPositionIfChanged(resolveInlineToolbarPosition(editor, surfaceRef.current))
+      return
+    }
+
+    if (inlineToolbarFrameRef.current !== null) {
+      return
+    }
+
+    inlineToolbarFrameRef.current = ownerWindow.requestAnimationFrame(() => {
+      inlineToolbarFrameRef.current = null
+      setInlineToolbarPositionIfChanged(resolveInlineToolbarPosition(editor, surfaceRef.current))
+    })
+  }, [editor, setInlineToolbarPositionIfChanged])
 
   useEffect(() => {
     const ownerDocument = surfaceRef.current?.ownerDocument ?? globalThis.document
+    const scrollListenerOptions = { capture: true, passive: true } as const
+
     ownerDocument.addEventListener('selectionchange', updateInlineToolbarPosition)
-    ownerDocument.addEventListener('scroll', updateInlineToolbarPosition, true)
+    ownerDocument.addEventListener('scroll', updateInlineToolbarPosition, scrollListenerOptions)
     ownerDocument.defaultView?.addEventListener('resize', updateInlineToolbarPosition)
 
     return () => {
+      if (inlineToolbarFrameRef.current !== null) {
+        ownerDocument.defaultView?.cancelAnimationFrame(inlineToolbarFrameRef.current)
+        inlineToolbarFrameRef.current = null
+      }
+
       ownerDocument.removeEventListener('selectionchange', updateInlineToolbarPosition)
-      ownerDocument.removeEventListener('scroll', updateInlineToolbarPosition, true)
+      ownerDocument.removeEventListener(
+        'scroll',
+        updateInlineToolbarPosition,
+        scrollListenerOptions,
+      )
       ownerDocument.defaultView?.removeEventListener('resize', updateInlineToolbarPosition)
     }
   }, [updateInlineToolbarPosition])
@@ -147,7 +187,7 @@ function EditorSurface(props: EditorSurfaceProps) {
     (event: PointerEvent<HTMLDivElement>) => {
       if (slashMenuState === null) {
         if (!isInlineEditorTarget(event.target) && !isInlineToolbarTarget(event.target)) {
-          setInlineToolbarPosition(null)
+          setInlineToolbarPositionIfChanged(null)
         }
 
         return
@@ -171,7 +211,7 @@ function EditorSurface(props: EditorSurfaceProps) {
 
       closeSlashMenu()
     },
-    [closeSlashMenu, slashMenuState],
+    [closeSlashMenu, setInlineToolbarPositionIfChanged, slashMenuState],
   )
 
   const handleKeyDownCapture = useCallback(
@@ -364,13 +404,16 @@ function EditorSurface(props: EditorSurfaceProps) {
     [closeSlashMenu, editor, slashMenuState],
   )
 
-  const handleFocusOut = useCallback((event: FocusEvent<HTMLDivElement>) => {
-    const nextFocusedElement = event.relatedTarget
+  const handleFocusOut = useCallback(
+    (event: FocusEvent<HTMLDivElement>) => {
+      const nextFocusedElement = event.relatedTarget
 
-    if (nextFocusedElement === null || !event.currentTarget.contains(nextFocusedElement)) {
-      setInlineToolbarPosition(null)
-    }
-  }, [])
+      if (nextFocusedElement === null || !event.currentTarget.contains(nextFocusedElement)) {
+        setInlineToolbarPositionIfChanged(null)
+      }
+    },
+    [setInlineToolbarPositionIfChanged],
+  )
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
       const activeBlockId = getActiveBlockId(editor)
@@ -539,6 +582,21 @@ function createInlineToolbarStyle(
     top: position.top,
     transform: 'translate(-50%, calc(-100% - 8px))',
   }
+}
+
+function areInlineToolbarPositionsEqual(
+  previous: InlineToolbarPosition | null,
+  next: InlineToolbarPosition | null,
+): boolean {
+  if (previous === next) {
+    return true
+  }
+
+  if (previous === null || next === null) {
+    return false
+  }
+
+  return previous.left === next.left && previous.top === next.top
 }
 
 function resolveInlineToolbarPosition(

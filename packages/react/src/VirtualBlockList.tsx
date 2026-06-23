@@ -1,9 +1,9 @@
-import { useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
+import { useRef, type CSSProperties, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { BlockId } from '@vetra/core'
 import { BlockRenderer } from '@vetra/react/BlockRenderer'
 import { SortableBlock, SortableBlockList } from '@vetra/react/drag/SortableBlockList'
-import { useDocument } from '@vetra/react/hooks/useDocument'
+import { useRootBlockList } from '@vetra/react/hooks/useRootBlockList'
 
 export interface VirtualBlockListProps {
   readonly blockIds?: readonly BlockId[]
@@ -13,11 +13,8 @@ export interface VirtualBlockListProps {
 
 export function VirtualBlockList(props: VirtualBlockListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null)
-  const document = useDocument()
-  const blockIds = useMemo(
-    () => props.blockIds ?? document.children[document.rootId] ?? [],
-    [document.children, document.rootId, props.blockIds],
-  )
+  const rootBlockList = useRootBlockList()
+  const blockIds = props.blockIds ?? rootBlockList.blockIds
 
   const virtualizer = useVirtualizer({
     count: blockIds.length,
@@ -81,7 +78,7 @@ export function VirtualBlockList(props: VirtualBlockListProps) {
         {dragEnabled ? (
           <SortableBlockList
             blockIds={blockIds}
-            rootId={document.rootId}
+            rootId={rootBlockList.rootId}
             sortableBlockIds={sortableBlockIds}
           >
             {listItems}

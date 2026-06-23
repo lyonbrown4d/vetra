@@ -337,7 +337,7 @@ function queryBlockToolbar(container: Element): HTMLElement | null {
   return toolbar instanceof HTMLElement ? toolbar : null
 }
 
-function selectActiveEditableBlockText(container: Element): void {
+async function selectActiveEditableBlockText(container: Element): Promise<void> {
   const editor = getActiveEditableBlock(container)
   const selection = window.getSelection()
   if (selection === null) {
@@ -353,10 +353,12 @@ function selectActiveEditableBlockText(container: Element): void {
     selection.addRange(range)
     document.dispatchEvent(new Event('selectionchange'))
   })
+
+  await waitForScheduledFocus()
 }
 
 describe('EditorRoot integrated interactions', () => {
-  it('shows the popup toolbar only after selecting text and converts the active block', () => {
+  it('shows the popup toolbar only after selecting text and converts the active block', async () => {
     const rendered = renderEditor(
       createDocument({
         id: 'doc',
@@ -368,7 +370,7 @@ describe('EditorRoot integrated interactions', () => {
       expect(queryBlockToolbar(rendered.container)).toBeNull()
       clickBlock(rendered.container, 'block-a')
       expect(queryBlockToolbar(rendered.container)).toBeNull()
-      selectActiveEditableBlockText(rendered.container)
+      await selectActiveEditableBlockText(rendered.container)
       expect(queryBlockToolbar(rendered.container)).not.toBeNull()
 
       act(() => {
@@ -496,7 +498,7 @@ describe('EditorRoot integrated interactions', () => {
     }
   })
 
-  it('does not open slash menu from custom editors or editor chrome controls', () => {
+  it('does not open slash menu from custom editors or editor chrome controls', async () => {
     const rendered = renderEditor(
       createDocument({
         id: 'doc',
@@ -510,7 +512,7 @@ describe('EditorRoot integrated interactions', () => {
 
     try {
       clickBlock(rendered.container, 'block-a')
-      selectActiveEditableBlockText(rendered.container)
+      await selectActiveEditableBlockText(rendered.container)
 
       const customSlash = dispatchKeyDown(getCustomContentEditable(rendered.container), '/')
       const gutterSlash = dispatchKeyDown(
